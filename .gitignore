@@ -1,0 +1,68 @@
+# Dependencies
+node_modules/
+/jspm_packages/
+
+# AI Agent logs & workspace configurations
+.agents/
+
+# Next.js build output
+.next/
+out/
+
+# Production builds
+build/
+dist/
+
+# Debug and log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Bun lockfile (if using binary lockfile, though bun.lock is text/tracked. Let's keep it open, but ignore bun-debug/crash logs if any)
+*.schemastore-schema*.json
+
+# Environment variables & secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+!.env.example
+
+# Operating System files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDEs and Editors
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.iml
+*.ipr
+*.iws
+.settings/
+.project
+.classpath
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Vercel
+.vercel
+
+# Python & virtual environments (kept from original just in case)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
