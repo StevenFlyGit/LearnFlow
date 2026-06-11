@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 A minimal Next.js starter for building apps inside the [Eazo](https://eazo.ai) platform. Includes a working example of the Eazo session token flow: the app requests the encrypted user token from the host via `postMessage`, sends it to a Next.js API route, decrypts it server-side with `@eazo/node-sdk`, and returns the user profile.
 
 ## Getting Started
@@ -46,3 +47,7 @@ You can generate a keypair in the Eazo developer settings. Never expose the priv
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+=======
+# LearnFlow
+一个学习规划的工作流Agent，目前开发的还不太完善
+>>>>>>> 7b94f04cdea9b2e0df8fe7ba48a3fb8192737ea9
