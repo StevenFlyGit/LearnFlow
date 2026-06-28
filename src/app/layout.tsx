@@ -6,8 +6,8 @@ import { Toaster } from "@/components/ui/sonner";
 import { I18nProvider } from "@/components/i18n/i18n-provider";
 import { LocaleSyncEffect } from "@/components/i18n/locale-sync-effect";
 import { getServerLocale } from "@/lib/i18n/server-preference";
-import { Sidebar } from "@/components/layout/Sidebar";
 import { StoreInitializer } from "@/components/layout/StoreInitializer";
+import { LayoutShell } from "@/components/layout/layout-shell";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -42,14 +42,7 @@ export default async function RootLayout({
         <I18nProvider>
           <LocaleSyncEffect />
           <StoreInitializer />
-          <div className="flex h-svh overflow-hidden">
-            {/* Desktop sidebar */}
-            <Sidebar />
-            {/* Main content */}
-            <main className="flex-1 overflow-hidden flex flex-col min-w-0">
-              {children}
-            </main>
-          </div>
+          <LayoutShell>{children}</LayoutShell>
           <Toaster />
         </I18nProvider>
       </body>

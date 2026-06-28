@@ -68,6 +68,30 @@ function DomainCard({ domain, onSelect, onDelete }: {
         </div>
       )}
 
+      {/* Dimension summary */}
+      {(domain.goal || domain.scope || domain.industry) && (
+        <div className="space-y-1 mb-2">
+          {domain.goal && (
+            <p className="text-[11px] text-[#9E988F] line-clamp-1">
+              <span className="text-[10px] font-medium text-[#B0A99F] mr-1">🎯 目的</span>
+              <span>{domain.goal}</span>
+            </p>
+          )}
+          {domain.scope && (
+            <p className="text-[11px] text-[#9E988F] line-clamp-1">
+              <span className="text-[10px] font-medium text-[#B0A99F] mr-1">📌 范围</span>
+              <span>{domain.scope}</span>
+            </p>
+          )}
+          {domain.industry && (
+            <p className="text-[11px] text-[#9E988F] line-clamp-1">
+              <span className="text-[10px] font-medium text-[#B0A99F] mr-1">🏭 行业</span>
+              <span>{domain.industry}</span>
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Stats */}
       <div className="flex items-center gap-3 mb-3 text-xs text-[#9E988F]">
         <span className="flex items-center gap-1">
@@ -115,6 +139,10 @@ function NewDomainModal({ onClose, onCreated }: { onClose: () => void; onCreated
   const [weekendPolicy, setWeekendPolicy] = useState<'none' | 'reduced' | 'full'>('full');
   const [loading, setLoading] = useState(false);
   const [useAI, setUseAI] = useState(true);
+  const [goal, setGoal] = useState('');
+  const [scope, setScope] = useState('');
+  const [industry, setIndustry] = useState('');
+  const [showMore, setShowMore] = useState(false);
 
   const handleCreate = async () => {
     if (!name.trim()) return toast.error('请输入领域名称');
@@ -127,6 +155,9 @@ function NewDomainModal({ onClose, onCreated }: { onClose: () => void; onCreated
         dailyHours, color, createdAt: Date.now(),
         completedHours: 0,
         weekendPolicy,
+        goal: goal.trim() || undefined,
+        scope: scope.trim() || undefined,
+        industry: industry.trim() || undefined,
       };
       await putDomain(domain);
 
@@ -140,6 +171,7 @@ function NewDomainModal({ onClose, onCreated }: { onClose: () => void; onCreated
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             domain: name.trim(), dailyHours,
+            goal: goal.trim(), scope: scope.trim(), industry: industry.trim(),
             apiKey: config.apiKey, provider: config.aiProvider,
             modelName: config.modelName, baseUrl: config.baseUrl,
           }),
@@ -223,9 +255,62 @@ function NewDomainModal({ onClose, onCreated }: { onClose: () => void; onCreated
             <input
               value={tags}
               onChange={e => setTags(e.target.value)}
-              placeholder="#编程 #算法 #AI"
+              placeholder="#编程 #算法 #语言 #艺术 #生化 #医学"
               className="w-full px-3 py-2.5 rounded-lg border border-[#EFEAE0] bg-[#F3EEE6] text-sm text-[#2C2A29] placeholder:text-[#9E988F] focus:outline-none focus:ring-2 focus:ring-[#8FA67F]/40"
             />
+          </div>
+          {/* Collapsible: More settings */}
+          <div>
+            <button type="button" onClick={() => setShowMore(!showMore)}
+              className="flex items-center gap-1 text-xs text-[#9E988F] hover:text-[#6E6A64] transition-colors">
+              <span>更多设置（可选）</span>
+              <ChevronRight size={12} className={cn('transition-transform', showMore && 'rotate-90')} />
+            </button>
+            <AnimatePresence>
+              {showMore && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="overflow-hidden"
+                >
+                  <div className="space-y-3 pt-3">
+                    <div>
+                      <label className="text-xs font-medium text-[#6E6A64] mb-1.5 block">学习目的（可选）</label>
+                      <input
+                        value={goal}
+                        onChange={e => setGoal(e.target.value)}
+                        placeholder="就业 or 学术研究 or 作为兴趣了解"
+                        maxLength={100}
+                        className="w-full px-3 py-2.5 rounded-lg border border-[#EFEAE0] bg-[#F3EEE6] text-sm text-[#2C2A29] placeholder:text-[#9E988F] focus:outline-none focus:ring-2 focus:ring-[#8FA67F]/40"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-[#6E6A64] mb-1.5 block">范围/方向约束（可选）</label>
+                      <textarea
+                        value={scope}
+                        onChange={e => setScope(e.target.value)}
+                        placeholder="深度学习：cv or nlp or 搜广推 or 具身智能"
+                        maxLength={80}
+                        rows={3}
+                        className="w-full px-3 py-2.5 rounded-lg border border-[#EFEAE0] bg-[#F3EEE6] text-sm text-[#2C2A29] placeholder:text-[#9E988F] focus:outline-none focus:ring-2 focus:ring-[#8FA67F]/40 resize-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-[#6E6A64] mb-1.5 block">行业/应用场景（可选）</label>
+                      <input
+                        value={industry}
+                        onChange={e => setIndustry(e.target.value)}
+                        placeholder="例如：自动驾驶、医疗影像、工业质检"
+                        maxLength={80}
+                        className="w-full px-3 py-2.5 rounded-lg border border-[#EFEAE0] bg-[#F3EEE6] text-sm text-[#2C2A29] placeholder:text-[#9E988F] focus:outline-none focus:ring-2 focus:ring-[#8FA67F]/40"
+                      />
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
           <div>
             <label className="text-xs font-medium text-[#6E6A64] mb-1.5 block">每日投入时间（小时）</label>

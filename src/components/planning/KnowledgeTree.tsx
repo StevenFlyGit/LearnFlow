@@ -6,15 +6,13 @@ import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronRight, ChevronDown, Plus, Trash2, Circle,
-  CheckCircle2, Clock, Edit, Loader2, Sparkles, ArrowUp, ArrowDown
+  CheckCircle2, Clock, Edit, Loader2, Sparkles, ArrowUp, ArrowDown, AlertTriangle
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
-import { putNode, deleteNode, getNote, putNote, getNodesByDomain, putDomain, type KnowledgeNode } from '@/lib/db';
+import { putNode, deleteNode, getNote, putNote, getNodesByDomain, type KnowledgeNode } from '@/lib/db';
+import { generateNodeId, getNow, syncDomainHours, syncParentHours, recalculateAllParentHours } from '@/lib/tree-utils';
 import { cn } from '@/utils/utils';
 import { toast } from 'sonner';
-
-const getNow = () => Date.now();
-const generateNodeId = (prefix = 'node') => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
 type NodeStatus = 'pending' | 'in_progress' | 'done';
 const STATUS_ICONS = {
@@ -26,76 +24,6 @@ const STATUS_LABELS: Record<NodeStatus, string> = {
   pending: '未开始', in_progress: '进行中', done: '已完成'
 };
 
-const syncDomainHours = async (
-  domainId: string,
-  allNodes: KnowledgeNode[],
-  domains: any[],
-  upsertDomain: (d: any) => void
-) => {
-  const domain = domains.find(d => d.id === domainId);
-  if (!domain) return;
-  const rootNodes = allNodes.filter(n => n.parentId === null);
-  const totalHours = rootNodes.reduce((sum, n) => sum + n.estimatedHours, 0);
-  if (domain.totalHours !== totalHours) {
-    const updatedDomain = { ...domain, totalHours };
-    await putDomain(updatedDomain);
-    upsertDomain(updatedDomain);
-  }
-};
-
-const syncParentHours = async (
-  parentId: string | null,
-  allNodes: KnowledgeNode[],
-  upsertNode: (n: KnowledgeNode) => void,
-  domainId: string,
-  domains: any[],
-  upsertDomain: (d: any) => void
-) => {
-  if (!parentId) {
-    await syncDomainHours(domainId, allNodes, domains, upsertDomain);
-    return;
-  }
-  const parentNode = allNodes.find(n => n.id === parentId);
-  if (!parentNode) return;
-  const children = allNodes.filter(n => n.parentId === parentId);
-  const totalHours = children.length > 0
-    ? children.reduce((sum, child) => sum + child.estimatedHours, 0)
-    : parentNode.estimatedHours;
-  let nextNodes = allNodes;
-  if (parentNode.estimatedHours !== totalHours) {
-    const updatedParent = { ...parentNode, estimatedHours: totalHours };
-    await putNode(updatedParent);
-    upsertNode(updatedParent);
-    nextNodes = allNodes.map(n => n.id === parentNode.id ? updatedParent : n);
-  }
-  await syncParentHours(parentNode.parentId, nextNodes, upsertNode, domainId, domains, upsertDomain);
-};
-
-const recalculateAllParentHours = async (
-  allNodes: KnowledgeNode[],
-  upsertNode: (n: KnowledgeNode) => void,
-  domainId: string,
-  domains: any[],
-  upsertDomain: (d: any) => void
-) => {
-  const parentNodes = allNodes
-    .filter(n => allNodes.some(child => child.parentId === n.id))
-    .sort((a, b) => b.level - a.level);
-  
-  let currentNodes = [...allNodes];
-  for (const parentNode of parentNodes) {
-    const children = currentNodes.filter(n => n.parentId === parentNode.id);
-    const totalHours = children.reduce((sum, child) => sum + child.estimatedHours, 0);
-    
-    if (parentNode.estimatedHours !== totalHours) {
-      const updatedParent = { ...parentNode, estimatedHours: totalHours };
-      await putNode(updatedParent);
-      upsertNode(updatedParent);
-      currentNodes = currentNodes.map(n => n.id === parentNode.id ? updatedParent : n);
-    }
-  }
-  await syncDomainHours(domainId, currentNodes, domains, upsertDomain);
-};
 
 function TreeNode({
   node, allNodes, level, compact, onSelectNode
@@ -114,6 +42,11 @@ function TreeNode({
   const children = allNodes.filter(n => n.parentId === node.id).sort((a, b) => a.order - b.order);
   const hasChildren = children.length > 0;
   const isActive = activeNodeId === node.id;
+  
+  // Check if this is an oversized leaf node (using domain's dailyHours as threshold)
+  const domain = domains.find(d => d.id === node.domainId);
+  const maxLeafHours = domain?.dailyHours;
+  const isOversizedLeaf = !hasChildren && !!maxLeafHours && node.estimatedHours > maxLeafHours;
 
   const siblings = allNodes.filter(n => n.parentId === node.parentId).sort((a, b) => a.order - b.order);
   const index = siblings.findIndex(n => n.id === node.id);
@@ -242,6 +175,7 @@ function TreeNode({
             <span className="w-3" />
           )}
           <span className="text-xs flex-1 truncate">{node.title}</span>
+          {isOversizedLeaf && <span title={`超过 ${maxLeafHours}h，建议拆分`}><AlertTriangle size={11} className="text-[#C8834A]" /></span>}
           <span className="opacity-0 group-hover:opacity-100">{STATUS_ICONS[node.status]}</span>
         </motion.div>
         <AnimatePresence>
@@ -301,6 +235,11 @@ function TreeNode({
               <span className="text-[10px] text-[#9E988F] flex items-center gap-1">
                 <Clock size={10} />{node.estimatedHours}h
               </span>
+              {isOversizedLeaf && (
+                <span className="text-[10px] text-[#C8834A] flex items-center gap-0.5" title={`超过 ${maxLeafHours}h，建议拆分`}>
+                  <AlertTriangle size={10} />超标
+                </span>
+              )}
               {node.startDate && (
                 <span className="text-[10px] text-[#9E988F]">
                   {new Date(node.startDate).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}
@@ -479,6 +418,7 @@ export function KnowledgeTree({ onSelectNode }: { onSelectNode: (n: KnowledgeNod
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           domain: domain.name, dailyHours: domain.dailyHours,
+          goal: domain.goal, scope: domain.scope, industry: domain.industry,
           apiKey: config.apiKey, provider: config.aiProvider,
           modelName: config.modelName, baseUrl: config.baseUrl,
         }),

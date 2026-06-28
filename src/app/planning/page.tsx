@@ -1,6 +1,6 @@
 'use client';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, LayoutGrid, CalendarDays, AlignJustify, LayoutList } from 'lucide-react';
+import { ChevronLeft, LayoutGrid, CalendarDays, AlignJustify, LayoutList, Scissors } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { DomainList } from '@/components/planning/DomainList';
 import { KnowledgeTree } from '@/components/planning/KnowledgeTree';
@@ -8,15 +8,45 @@ import { NoteEditor } from '@/components/planning/NoteEditor';
 import { CalendarView } from '@/components/planning/CalendarView';
 import { cn } from '@/utils/utils';
 import { putNode, type KnowledgeNode } from '@/lib/db';
+import { findOversizedLeaves, executeSplitAll } from '@/lib/node-splitter';
 import { toast } from 'sonner';
 
 export default function PlanningPage() {
   const {
     activeDomainId, activeNodeId, setActiveDomainId, domains, nodes, setNodes,
     planningView, setPlanningView, treeView, setTreeView, editorOpen,
+    upsertNode, upsertDomain,
   } = useStore();
 
   const activeDomain = domains.find(d => d.id === activeDomainId);
+
+  const handleAutoSplit = async () => {
+    if (!activeDomain || nodes.length === 0) return;
+    
+    const maxLeafHours = activeDomain.dailyHours;
+    if (!maxLeafHours) {
+      toast.error('请先设置该领域的每日投入时间');
+      return;
+    }
+    
+    const oversized = findOversizedLeaves(nodes, maxLeafHours);
+    if (oversized.length === 0) {
+      toast.info('所有节点均在限制范围内，无需拆分');
+      return;
+    }
+    
+    const confirmed = confirm(`发现 ${oversized.length} 个节点超过 ${maxLeafHours}h，是否自动拆分？\n\n${oversized.map(n => `• ${n.title} (${n.estimatedHours}h)`).join('\n')}`);
+    if (!confirmed) return;
+    
+    try {
+      const result = await executeSplitAll(oversized, maxLeafHours, nodes, upsertNode, domains, upsertDomain);
+      setNodes(result);
+      toast.success(`已拆分 ${oversized.length} 个节点`);
+    } catch (err) {
+      console.error(err);
+      toast.error('拆分失败');
+    }
+  };
 
   const handleSelectNode = (node: KnowledgeNode) => {
     // editor opens via store side effect in KnowledgeTree
@@ -115,7 +145,7 @@ export default function PlanningPage() {
     try {
       // 1. Clear ALL parent nodes' startDates to ensure only leaf nodes have dates
       for (let i = 0; i < updatedNodes.length; i++) {
-        if (!isLeaf(updatedNodes[i].id) && updatedNodes[i].startDate) {
+        if (updatedNodes[i].domainId === activeDomain.id && !isLeaf(updatedNodes[i].id) && updatedNodes[i].startDate) {
           updatedNodes[i] = { ...updatedNodes[i], startDate: undefined };
           await putNode(updatedNodes[i]);
         }
@@ -124,7 +154,7 @@ export default function PlanningPage() {
       // 2. Clear startDates for the nodes to be recalculated
       for (const node of nodesToSchedule) {
         const idx = updatedNodes.findIndex(n => n.id === node.id);
-        if (idx !== -1) {
+        if (idx !== -1 && updatedNodes[idx].domainId === activeDomain.id) {
           updatedNodes[idx] = { ...updatedNodes[idx], startDate: undefined };
           await putNode(updatedNodes[idx]);
         }
@@ -133,7 +163,7 @@ export default function PlanningPage() {
       // 3. If full reschedule, clear ALL leaf startDates in this domain
       if (!isPartial) {
         for (let i = 0; i < updatedNodes.length; i++) {
-          if (updatedNodes[i].startDate) {
+          if (updatedNodes[i].domainId === activeDomain.id && updatedNodes[i].startDate) {
             updatedNodes[i] = { ...updatedNodes[i], startDate: undefined };
             await putNode(updatedNodes[i]);
           }
@@ -207,7 +237,7 @@ export default function PlanningPage() {
 
         // Find index and update
         const nodeIndex = updatedNodes.findIndex(n => n.id === node.id);
-        if (nodeIndex !== -1) {
+        if (nodeIndex !== -1 && updatedNodes[nodeIndex].domainId === activeDomain.id) {
           updatedNodes[nodeIndex] = {
             ...updatedNodes[nodeIndex],
             startDate: firstDateStr || undefined
@@ -246,6 +276,15 @@ export default function PlanningPage() {
             </span>
 
             <div className="ml-auto flex items-center gap-2">
+              {/* Auto Split Button */}
+              <button
+                onClick={handleAutoSplit}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#EFEAE0] bg-[#FDFBF7] text-xs font-medium text-[#6E6A64] hover:bg-[#F3EEE6] transition-colors"
+              >
+                <Scissors size={12} className="text-[#C8834A]" />
+                自动拆分
+              </button>
+
               {/* Auto Schedule Button */}
               <button
                 onClick={handleAutoSchedule}
@@ -351,7 +390,7 @@ export default function PlanningPage() {
 
           {/* Right editor panel */}
           <AnimatePresence>
-            {editorOpen && activeDomainId && planningView === 'tree' && (
+            {editorOpen && activeDomainId && (
               <NoteEditor />
             )}
           </AnimatePresence>

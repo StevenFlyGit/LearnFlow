@@ -9,7 +9,13 @@ import { toast } from 'sonner';
 
 type SyncItem = { node: KnowledgeNode; domainName: string; selected: boolean };
 
-function NodeSyncRow({ item, onToggle, depth }: { item: SyncItem; onToggle: () => void; depth: number }) {
+function NodeSyncRow({
+  item, onToggle, depth,
+  expanded, onToggleExpand, hasChildren, onSelectChildren, childrenAllSelected,
+}: {
+  item: SyncItem; onToggle: () => void; depth: number;
+  expanded?: boolean; onToggleExpand?: () => void; hasChildren?: boolean; onSelectChildren?: () => void; childrenAllSelected?: boolean;
+}) {
   return (
     <motion.div
       initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }}
@@ -19,17 +25,44 @@ function NodeSyncRow({ item, onToggle, depth }: { item: SyncItem; onToggle: () =
       style={{ paddingLeft: `${12 + depth * 18}px` }}
       onClick={onToggle}
     >
+      {/* Expand/collapse arrow for non-leaf nodes */}
+      {hasChildren ? (
+        <div
+          className="w-4 h-4 flex items-center justify-center flex-shrink-0 text-[#9E988F] hover:text-[#2C2A29] transition-colors"
+          onClick={e => { e.stopPropagation(); onToggleExpand?.(); }}
+        >
+          {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        </div>
+      ) : (
+        <div className="w-4 flex-shrink-0" />
+      )}
       <div className={cn(
         'w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-all',
         item.selected ? 'bg-[#8FA67F] border-[#8FA67F]' : 'border-[#D8D0C4] group-hover:border-[#8FA67F]'
       )}>
         {item.selected && <CheckCircle2 size={10} className="text-white" />}
       </div>
-      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-        style={{ backgroundColor: item.selected ? '#8FA67F' : '#D8D0C4', marginLeft: depth * 0 }} />
       <span className={cn('text-xs flex-1 truncate', item.selected ? 'text-[#2C2A29]' : 'text-[#6E6A64]')}>
         {item.node.title}
       </span>
+      {/* Select all children checkbox-style button */}
+      {hasChildren && onSelectChildren && (
+        <div
+          className="flex items-center gap-1 flex-shrink-0"
+          onClick={e => { e.stopPropagation(); onSelectChildren(); }}
+        >
+          <div className={cn(
+            'w-4 h-4 rounded border flex items-center justify-center transition-all cursor-pointer',
+            childrenAllSelected ? 'bg-[#8FA67F] border-[#8FA67F]' : 'border-[#D8D0C4] hover:border-[#8FA67F]'
+          )}>
+            {childrenAllSelected && <CheckCircle2 size={10} className="text-white" />}
+          </div>
+          <span className={cn(
+            'text-[10px] cursor-pointer transition-colors',
+            childrenAllSelected ? 'text-[#8FA67F]' : 'text-[#9E988F] hover:text-[#8FA67F]'
+          )}>全选</span>
+        </div>
+      )}
       <span className="text-[10px] text-[#9E988F]">{item.node.estimatedHours}h</span>
     </motion.div>
   );
@@ -42,6 +75,7 @@ export function NotionScreen() {
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<{ ok: number; fail: number } | null>(null);
   const [expandedDomains, setExpandedDomains] = useState<Record<string, boolean>>({});
+  const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     async function load() {
@@ -119,6 +153,22 @@ export function NotionScreen() {
       toast.success(`成功同步 ${ok} 个知识点到 Notion`);
     } catch { toast.error('同步失败，请检查 Notion Token 和权限'); }
     finally { setSyncing(false); }
+  };
+
+  const collectDescendants = (nodeId: string, domainId: string): string[] => {
+    const children = items.filter(i => i.node.parentId === nodeId && i.node.domainId === domainId);
+    return children.flatMap(c => [c.node.id, ...collectDescendants(c.node.id, domainId)]);
+  };
+
+  const selectChildren = (nodeId: string, domainId: string) => {
+    const descendantIds = collectDescendants(nodeId, domainId);
+    const allSelected = descendantIds.every(id => items.find(i => i.node.id === id)?.selected);
+    const idsToToggle = new Set([nodeId, ...descendantIds]);
+    setItems(prev => prev.map(i => idsToToggle.has(i.node.id) ? { ...i, selected: !allSelected } : i));
+  };
+
+  const toggleNode = (nodeId: string) => {
+    setExpandedNodes(prev => ({ ...prev, [nodeId]: !prev[nodeId] }));
   };
 
   const selectedCount = items.filter(i => i.selected).length;
@@ -224,12 +274,29 @@ export function NotionScreen() {
                 return items
                   .filter(i => i.node.parentId === parentId)
                   .sort((a, b) => a.node.order - b.node.order)
-                  .map(item => (
-                    <div key={item.node.id}>
-                      <NodeSyncRow item={item} onToggle={() => toggleItem(item.node.id)} depth={depth} />
-                      {renderTree(domainItems, item.node.id, depth + 1)}
-                    </div>
-                  ));
+                  .map(item => {
+                    const children = domainItems.filter(i => i.node.parentId === item.node.id);
+                    const hasChildren = children.length > 0;
+                    const isExpanded = expandedNodes[item.node.id] !== false;
+                    const descendantIds = hasChildren ? collectDescendants(item.node.id, domainId) : [];
+                    const childrenAllSelected = hasChildren && descendantIds.length > 0 && descendantIds.every(id => items.find(i => i.node.id === id)?.selected);
+
+                    return (
+                      <div key={item.node.id}>
+                        <NodeSyncRow
+                          item={item}
+                          onToggle={() => toggleItem(item.node.id)}
+                          depth={depth}
+                          hasChildren={hasChildren}
+                          expanded={isExpanded}
+                          onToggleExpand={() => toggleNode(item.node.id)}
+                          onSelectChildren={hasChildren ? () => selectChildren(item.node.id, domainId) : undefined}
+                          childrenAllSelected={childrenAllSelected}
+                        />
+                        {hasChildren && isExpanded && renderTree(domainItems, item.node.id, depth + 1)}
+                      </div>
+                    );
+                  });
               };
 
               return (

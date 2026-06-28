@@ -6,7 +6,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Eye, Edit, Sparkles, Loader2, ChevronDown, CheckCircle2, Lightbulb, Rss, ArrowRight, Check, BookOpen } from 'lucide-react';
 import { useStore } from '@/lib/store';
-import { putNote, putNode, putDomain, getNote, type Note, type KnowledgeNode } from '@/lib/db';
+import { putNote, putNode, putDomain, getNote, getNode, type Note, type KnowledgeNode } from '@/lib/db';
 import { toast } from 'sonner';
 import { cn } from '@/utils/utils';
 
@@ -199,10 +199,68 @@ export function NoteEditor() {
   const [organizing, setOrganizing] = useState(false);
   const [organizedContent, setOrganizedContent] = useState('');
 
-  const node = nodes.find(n => n.id === activeNodeId);
+  // ── Drag & Resize Panel Width ──
+  const [width, setWidth] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('learnflow.editorWidth');
+      return saved ? parseInt(saved, 10) : 350;
+    }
+    return 350;
+  });
+  const [isResizing, setIsResizing] = useState(false);
+
+  const startResizing = useCallback((mouseDownEvent: React.MouseEvent) => {
+    mouseDownEvent.preventDefault();
+    setIsResizing(true);
+  }, []);
+
+  const stopResizing = useCallback(() => {
+    setIsResizing(false);
+  }, []);
+
+  const resize = useCallback((mouseMoveEvent: MouseEvent) => {
+    if (isResizing) {
+      const newWidth = window.innerWidth - mouseMoveEvent.clientX;
+      if (newWidth >= 280 && newWidth <= window.innerWidth * 0.75) {
+        setWidth(newWidth);
+        localStorage.setItem('learnflow.editorWidth', String(newWidth));
+      }
+    }
+  }, [isResizing]);
+
+  useEffect(() => {
+    window.addEventListener('mousemove', resize);
+    window.addEventListener('mouseup', stopResizing);
+    return () => {
+      window.removeEventListener('mousemove', resize);
+      window.removeEventListener('mouseup', stopResizing);
+    };
+  }, [resize, stopResizing]);
+
+  // ── Load Node from Store or IndexedDB ──
+  const [currentNode, setCurrentNode] = useState<KnowledgeNode | null>(null);
+
+  useEffect(() => {
+    if (!activeNodeId) {
+      setCurrentNode(null);
+      return;
+    }
+    const found = nodes.find(n => n.id === activeNodeId);
+    if (found) {
+      setCurrentNode(found);
+    } else {
+      getNode(activeNodeId).then(n => {
+        if (n) setCurrentNode(n);
+      }).catch(err => {
+        console.error('Error fetching node:', err);
+      });
+    }
+  }, [activeNodeId, nodes]);
+
+  const node = currentNode;
   const content = activeNote?.content || '';
   
-  const [tempTitle, setTempTitle] = useState(node?.title || '');
+  const [tempTitle, setTempTitle] = useState('');
 
   useEffect(() => {
     if (node) {
@@ -393,9 +451,17 @@ export function NoteEditor() {
         animate={{ x: 0, opacity: 1 }}
         exit={{ x: '100%', opacity: 0 }}
         transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-        className="flex flex-col h-full bg-[#FDFBF7] border-l border-[#EFEAE0]"
-        style={{ width: 350, minWidth: 350 }}
+        className={cn("flex flex-col h-full bg-[#FDFBF7] border-l border-[#EFEAE0] relative", isResizing && "select-none")}
+        style={{ width, minWidth: 280 }}
       >
+        {/* Resize Handle */}
+        <div
+          onMouseDown={startResizing}
+          className={cn(
+            "absolute left-0 top-0 bottom-0 w-1.5 -ml-1 cursor-col-resize z-50 hover:bg-[#8FA67F]/40 transition-colors",
+            isResizing && "bg-[#8FA67F]"
+          )}
+        />
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-[#EFEAE0]">
           <div className="flex-1 min-w-0 mr-2">

@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Rss, ExternalLink, Search, Trash2, Loader2, RefreshCw, Globe } from 'lucide-react';
+import { Plus, Rss, ExternalLink, Search, Trash2, Loader2, RefreshCw, Globe, Copy } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { putFeed, deleteFeed, type RssFeed } from '@/lib/db';
 import { cn } from '@/utils/utils';
@@ -18,6 +18,7 @@ export function RssScreen() {
   const [addUrl, setAddUrl] = useState('');
   const [adding, setAdding] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; feed: RssFeed } | null>(null);
 
   // Fetch a single feed
   const fetchFeed = async (feed: RssFeed) => {
@@ -59,13 +60,36 @@ export function RssScreen() {
       };
       await putFeed(feed);
       upsertFeed(feed);
+      const itemCount = data.items?.length || 0;
       setFeedData(prev => ({ ...prev, [feed.id]: { feed, articles: data.items || [], loading: false } }));
       setAddUrl('');
       setShowAddForm(false);
       setSelectedFeedId(feed.id);
-      toast.success(`已添加订阅：${feed.name}`);
+      if (itemCount === 0) {
+        toast.success(`已添加订阅：${feed.name}（暂无文章，请稍后刷新）`);
+      } else {
+        toast.success(`已添加订阅：${feed.name}`);
+      }
     } catch { toast.error('添加失败，请检查 URL'); }
     finally { setAdding(false); }
+  };
+
+  // Close context menu on click outside
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const handler = () => setCtxMenu(null);
+    document.addEventListener('click', handler);
+    return () => document.removeEventListener('click', handler);
+  }, [ctxMenu]);
+
+  const handleCopyUrl = async (feed: RssFeed) => {
+    try {
+      await navigator.clipboard.writeText(feed.url);
+      toast.success('已复制订阅链接');
+    } catch {
+      toast.error('复制失败');
+    }
+    setCtxMenu(null);
   };
 
   const handleDelete = async (feed: RssFeed) => {
@@ -84,6 +108,7 @@ export function RssScreen() {
     : articles;
 
   return (
+    <>
     <div className="flex h-svh overflow-hidden bg-[#FAF7F2]">
       {/* Left panel — feed list */}
       <div className="w-72 flex-shrink-0 border-r border-[#EFEAE0] flex flex-col bg-[#F3EEE6]">
@@ -136,7 +161,8 @@ export function RssScreen() {
                 <div key={feed.id}
                   className={cn('group flex items-center gap-2 px-3 py-2.5 cursor-pointer transition-colors',
                     selectedFeedId === feed.id ? 'bg-[#8FA67F]/15' : 'hover:bg-[#EFEAE0]')}
-                  onClick={() => setSelectedFeedId(feed.id)}>
+                  onClick={() => setSelectedFeedId(feed.id)}
+                  onContextMenu={e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, feed }); }}>
                   <div className="w-6 h-6 rounded-lg bg-[#C8834A]/20 flex items-center justify-center flex-shrink-0">
                     <Rss size={11} className="text-[#C8834A]" />
                   </div>
@@ -189,6 +215,7 @@ export function RssScreen() {
               ) : filtered.length === 0 ? (
                 <div className="text-center py-16">
                   <p className="text-sm text-[#9E988F]">{searchQuery ? '没有匹配的文章' : '暂无文章'}</p>
+                  {!searchQuery && <p className="text-xs text-[#9E988F] mt-2">订阅源可能尚未发布内容，点击左侧刷新按钮重试</p>}
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -229,5 +256,28 @@ export function RssScreen() {
         )}
       </div>
     </div>
+
+    {/* Context menu */}
+    <AnimatePresence>
+      {ctxMenu && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.95 }}
+          transition={{ duration: 0.1 }}
+          className="fixed z-50 min-w-[140px] rounded-xl border border-[#EFEAE0] bg-[#FDFBF7] shadow-lg py-1"
+          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+        >
+          <button
+            onClick={() => handleCopyUrl(ctxMenu.feed)}
+            className="flex items-center gap-2 w-full px-3 py-2 text-xs text-[#2C2A29] hover:bg-[#EFEAE0] transition-colors"
+          >
+            <Copy size={12} className="text-[#9E988F]" />
+            复制链接
+          </button>
+        </motion.div>
+      )}
+    </AnimatePresence>
+    </>
   );
 }

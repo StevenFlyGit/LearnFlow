@@ -4,6 +4,34 @@
  */
 import { NextRequest } from 'next/server';
 
+function isLikelyHtml(content: string): boolean {
+  const trimmed = content.trimStart().substring(0, 500).toLowerCase();
+  return trimmed.startsWith('<!doctype html') || trimmed.startsWith('<html');
+}
+
+function extractTitle(xml: string, fallback: string): string {
+  return xml.match(/<title[^>]*>([\s\S]*?)<\/title>/s)?.[1]?.replace(/<!\[CDATA\[(.*?)\]\]>/s, '$1')?.trim() || fallback;
+}
+
+async function tryFetch(url: string, useProxy: boolean): Promise<{ xml: string; title: string; items: ReturnType<typeof parseRSS>; isHtml: boolean }> {
+  if (useProxy) {
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+    const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(15000) });
+    const data = await res.json();
+    const xml = data.contents;
+    if (isLikelyHtml(xml)) return { xml, title: url, items: [], isHtml: true };
+    return { xml, title: extractTitle(xml, url), items: parseRSS(xml), isHtml: false };
+  }
+  const res = await fetch(url, {
+    headers: { 'User-Agent': 'LearnFlow RSS Reader/1.0' },
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const xml = await res.text();
+  if (isLikelyHtml(xml)) return { xml, title: url, items: [], isHtml: true };
+  return { xml, title: extractTitle(xml, url), items: parseRSS(xml), isHtml: false };
+}
+
 export async function POST(req: NextRequest) {
   const { url } = await req.json();
 
@@ -12,30 +40,19 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // 尝试直接获取
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'LearnFlow RSS Reader/1.0' },
-      signal: AbortSignal.timeout(10000),
-    });
-
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const xml = await res.text();
-
-    // 简单解析 RSS/Atom XML
-    const items = parseRSS(xml);
-    const title = xml.match(/<title>(.*?)<\/title>/s)?.[1]?.replace(/<!\[CDATA\[(.*?)\]\]>/s, '$1')?.trim() || url;
-
-    return new Response(JSON.stringify({ title, items }), { headers: { 'Content-Type': 'application/json' } });
+    const result = await tryFetch(url, false);
+    if (result.isHtml) {
+      return new Response(JSON.stringify({ error: '该链接不是 RSS/Atom 订阅源，请输入正确的 RSS  feed URL' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+    return new Response(JSON.stringify({ title: result.title, items: result.items }), { headers: { 'Content-Type': 'application/json' } });
   } catch {
-    // 使用 CORS 代理备用
+    // 直接请求失败，使用 CORS 代理备用
     try {
-      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-      const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(15000) });
-      const data = await res.json();
-      const xml = data.contents;
-      const items = parseRSS(xml);
-      const title = xml.match(/<title>(.*?)<\/title>/s)?.[1]?.replace(/<!\[CDATA\[(.*?)\]\]>/s, '$1')?.trim() || url;
-      return new Response(JSON.stringify({ title, items }), { headers: { 'Content-Type': 'application/json' } });
+      const result = await tryFetch(url, true);
+      if (result.isHtml) {
+        return new Response(JSON.stringify({ error: '该链接不是 RSS/Atom 订阅源，请输入正确的 RSS feed URL' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+      }
+      return new Response(JSON.stringify({ title: result.title, items: result.items }), { headers: { 'Content-Type': 'application/json' } });
     } catch {
       return new Response(JSON.stringify({ error: '无法获取 RSS，请检查 URL 是否正确' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
     }
@@ -56,7 +73,9 @@ function parseRSS(xml: string) {
     const link = cleanCDATA(content.match(/<link[^>]*>([\s\S]*?)<\/link>/)?.[1] || '') ||
                  content.match(/<link[^>]*href="([^"]+)"/)?.[1] || '';
     const pubDate = content.match(/<pubDate>([\s\S]*?)<\/pubDate>/)?.[1] ||
-                    content.match(/<published>([\s\S]*?)<\/published>/)?.[1] || '';
+                    content.match(/<published>([\s\S]*?)<\/published>/)?.[1] ||
+                    content.match(/<dc:date>([\s\S]*?)<\/dc:date>/)?.[1] ||
+                    content.match(/<updated>([\s\S]*?)<\/updated>/)?.[1] || '';
     const description = cleanCDATA(content.match(/<description[^>]*>([\s\S]*?)<\/description>/)?.[1] || '')
                          .replace(/<[^>]+>/g, '').slice(0, 200);
     if (title && link) items.push({ title, link, pubDate, description });

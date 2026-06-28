@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   CheckCircle2, Circle, Clock, Loader2, Sparkles,
-  BarChart2, CalendarDays, BookOpen, Quote, RefreshCcw, AlertCircle
+  BarChart2, CalendarDays, BookOpen, Quote, RefreshCcw, AlertCircle,
+  ChevronRight, ChevronDown
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import {
@@ -14,6 +15,8 @@ import {
 } from '@/lib/db';
 import { cn } from '@/utils/utils';
 import { toast } from 'sonner';
+import { CalendarView } from '@/components/planning/CalendarView';
+import { NoteEditor } from '@/components/planning/NoteEditor';
 
 const getNow = () => Date.now();
 
@@ -26,6 +29,10 @@ export type DashboardTaskItem = {
   status: 'pending' | 'done';
   type: 'study' | 'review';
   reviewRoundIndex?: number;
+  parentId: string | null;
+  level: number;
+  hasChildren: boolean;
+  isOverdue?: boolean;
 };
 
 export function WeeklySummaryPanel({ tasks }: { tasks: DashboardTaskItem[] }) {
@@ -147,8 +154,209 @@ export function WeeklySummaryPanel({ tasks }: { tasks: DashboardTaskItem[] }) {
   );
 }
 
+// Helper: build hierarchical task list from cached due items
+function buildHierarchicalTasksFromCached(
+  dueItems: Array<DailyPlanItem & { status: 'pending' | 'done'; details?: { node: KnowledgeNode; dName: string; dColor: string } }>,
+  allNodesMap: Record<string, { node: KnowledgeNode; dName: string; dColor: string }>,
+  domainNodesMap: Record<string, KnowledgeNode[]>,
+  domains: Domain[]
+): DashboardTaskItem[] {
+  // Collect due node IDs
+  const dueNodeIds = new Set(dueItems.map(i => i.nodeId));
+
+  // Build per-domain hierarchical lists
+  const result: DashboardTaskItem[] = [];
+  for (const domain of domains) {
+    const nodes = domainNodesMap[domain.id] || [];
+    const dColor = domain.color || '#8FA67F';
+
+    // Find ancestor IDs for due nodes in this domain
+    const ancestorIds = new Set<string>();
+    for (const nodeId of dueNodeIds) {
+      const nodeInfo = allNodesMap[nodeId];
+      if (!nodeInfo || nodeInfo.dName !== domain.name) continue;
+      let pid = nodeInfo.node.parentId;
+      while (pid) {
+        ancestorIds.add(pid);
+        const parent = nodes.find(x => x.id === pid);
+        if (parent) pid = parent.parentId;
+        else break;
+      }
+    }
+
+    // DFS walk to produce ordered hierarchical list
+    const walk = (parentId: string | null, level: number) => {
+      const children = nodes.filter(n => n.parentId === parentId).sort((a, b) => a.order - b.order);
+      for (const child of children) {
+        const hasChildren = nodes.some(n => n.parentId === child.id);
+        const isDue = dueNodeIds.has(child.id);
+        const isAncestor = ancestorIds.has(child.id);
+
+        if (isDue || isAncestor) {
+          const dueItem = dueItems.find(i => i.nodeId === child.id);
+          result.push({
+            nodeId: child.id,
+            nodeTitle: dueItem?.title || child.title,
+            domainName: domain.name,
+            domainColor: dColor,
+            estimatedHours: dueItem?.duration || child.estimatedHours,
+            status: isDue ? (dueItem?.status || 'pending') : 'pending',
+            type: dueItem?.type || 'study',
+            reviewRoundIndex: undefined,
+            parentId: child.parentId,
+            level,
+            hasChildren,
+          });
+        }
+
+        if (hasChildren) {
+          walk(child.id, level + 1);
+        }
+      }
+    };
+    walk(null, 0);
+  }
+  return result;
+}
+
+// Hierarchical task list component with expand/collapse
+function HierarchicalTaskList({
+  tasks,
+  allTasks,
+  onToggle,
+  onSelectNode,
+}: {
+  tasks: DashboardTaskItem[];
+  allTasks: DashboardTaskItem[];
+  onToggle: (task: DashboardTaskItem) => void;
+  onSelectNode: (e: React.MouseEvent, nodeId: string) => void;
+}) {
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
+  const toggleCollapse = (nodeId: string) => {
+    setCollapsed(prev => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) next.delete(nodeId);
+      else next.add(nodeId);
+      return next;
+    });
+  };
+
+  // Build recursive rendering
+  const renderTask = (task: DashboardTaskItem, index: number) => {
+    const done = task.status === 'done';
+    const isReview = task.type === 'review';
+    const isCategory = task.hasChildren;
+    const isCollapsed = collapsed.has(task.nodeId);
+    const indentPx = task.level * 20;
+
+    // Find children of this task
+    const childTasks = tasks.filter(t => t.parentId === task.nodeId);
+
+    return (
+      <div key={`${task.nodeId}-${task.type}`}>
+        <motion.div
+          layout
+          whileHover={{ x: 2 }}
+          className={cn(
+            'flex items-center gap-3 rounded-xl border transition-all',
+            isCategory
+              ? 'border-[#EFEAE0]/60 bg-transparent px-3 py-2'
+              : done
+                ? 'border-[#EFEAE0] bg-[#F3EEE6]/50 opacity-60 p-3.5 cursor-pointer'
+                : 'border-[#EFEAE0] bg-[#F3EEE6] hover:border-[#D8D0C4] hover:shadow-sm p-3.5 cursor-pointer',
+          )}
+          style={{ marginLeft: `${indentPx}px` }}
+          onClick={isCategory ? undefined : (e) => onSelectNode(e, task.nodeId)}
+        >
+          {isCategory ? (
+            <button
+              onClick={(e) => { e.stopPropagation(); toggleCollapse(task.nodeId); }}
+              className="text-[#9E988F] hover:text-[#6E6A64] flex-shrink-0"
+            >
+              {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+            </button>
+          ) : (
+            <span className="w-3.5 flex-shrink-0" />
+          )}
+
+          {!isCategory && (
+            <motion.div 
+              whileTap={{ scale: 0.9 }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggle(task);
+              }}
+            >
+              {done ? (
+                <CheckCircle2 size={18} className="text-[#5D7052] flex-shrink-0" />
+              ) : (
+                <Circle size={18} className="text-[#9E988F] flex-shrink-0 hover:text-[#8FA67F] transition-colors" />
+              )}
+            </motion.div>
+          )}
+
+          <div className="flex-1 min-w-0">
+            <p className={cn(
+              'text-sm leading-snug truncate',
+              isCategory
+                ? 'font-semibold text-[#3E4D3E]'
+                : done
+                  ? 'line-through text-[#9E988F] font-medium'
+                  : 'font-medium text-[#2C2A29]'
+            )}>
+              {task.nodeTitle}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {isReview && !isCategory && (
+              <span className="text-[9px] font-semibold bg-[#C8834A]/12 text-[#C8834A] border border-[#C8834A]/20 px-1.5 py-0.5 rounded-full uppercase">
+                复习
+              </span>
+            )}
+            {!isCategory && (
+              <span className="flex items-center gap-1 text-xs text-[#9E988F]">
+                <Clock size={11} />
+                {task.estimatedHours}h
+              </span>
+            )}
+          </div>
+        </motion.div>
+
+        {/* Render children if expanded */}
+        <AnimatePresence>
+          {!isCollapsed && childTasks.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.15, ease: [0.4, 0, 0.2, 1] }}
+            >
+              {childTasks.map((child, i) => renderTask(child, i))}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  };
+
+  // Only render root-level tasks (level 0 or those whose parentId is not in the task list)
+  const rootTasks = tasks.filter(t => {
+    if (t.parentId === null) return true;
+    // Show if parent is not in this domain's task list
+    return !tasks.some(s => s.nodeId === t.parentId);
+  });
+
+  return (
+    <div className="space-y-1">
+      {rootTasks.map((task, i) => renderTask(task, i))}
+    </div>
+  );
+}
+
 export function DashboardScreen() {
-  const { domains, config, upsertNode } = useStore();
+  const { domains, config, upsertNode, activeNodeId, editorOpen, setActiveNodeId, setEditorOpen, setActiveNote } = useStore();
   const [tasks, setTasks] = useState<DashboardTaskItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showSummary, setShowSummary] = useState(false);
@@ -173,13 +381,13 @@ export function DashboardScreen() {
         const cachedPlan = await getDailyPlan(todayStr);
 
         if (cachedPlan) {
-          // Resolve domain colors & titles for the cached items
-          const resolvedItems: DashboardTaskItem[] = [];
-          
           // Fetch all nodes to resolve details
+          // Build node map for all domains
           const allNodesMap: Record<string, { node: KnowledgeNode, dName: string, dColor: string }> = {};
+          const domainNodesMap: Record<string, KnowledgeNode[]> = {};
           for (const d of domains) {
             const ns = await getNodesByDomain(d.id);
+            domainNodesMap[d.id] = ns;
             ns.forEach(n => {
               allNodesMap[n.id] = { node: n, dName: d.name, dColor: d.color || '#8FA67F' };
             });
@@ -188,6 +396,7 @@ export function DashboardScreen() {
           let cacheDirty = false;
           const filteredItems: typeof cachedPlan.items = [];
 
+          // Resolve status for cached items
           cachedPlan.items.forEach(item => {
             const details = allNodesMap[item.nodeId];
             if (item.type === 'study' && !details) {
@@ -204,16 +413,27 @@ export function DashboardScreen() {
               item.status = actualStatus;
               cacheDirty = true;
             }
+          });
 
-            resolvedItems.push({
-              nodeId: item.nodeId,
-              nodeTitle: item.title,
-              domainName: details?.dName || '已删领域',
-              domainColor: details?.dColor || '#8FA67F',
-              estimatedHours: item.duration,
-              status: actualStatus,
-              type: item.type
-            });
+          // Build hierarchical task list from cached items
+          const dueItems = filteredItems.map(item => {
+            const details = allNodesMap[item.nodeId];
+            let actualStatus = item.status;
+            if (item.type === 'study' && details) {
+              actualStatus = details.node.status === 'done' ? 'done' : 'pending';
+            }
+            return { ...item, status: actualStatus as 'pending' | 'done', details };
+          });
+
+          const resolvedItems = buildHierarchicalTasksFromCached(
+            dueItems, allNodesMap, domainNodesMap, domains
+          ).map(item => {
+            // Mark overdue items (startDate < today for study, review date < today for review)
+            const nodeInfo = allNodesMap[item.nodeId];
+            if (nodeInfo && item.type === 'study' && nodeInfo.node.startDate) {
+              item.isOverdue = nodeInfo.node.startDate.slice(0, 10) < todayStr;
+            }
+            return item;
           });
 
           if (cacheDirty) {
@@ -226,10 +446,21 @@ export function DashboardScreen() {
         } else {
           // 2. Compute live today plan
           const todayTasks: DashboardTaskItem[] = [];
+          // Collect all nodes and domain info
+          const allNodesMap: Record<string, { node: KnowledgeNode, dName: string, dColor: string }> = {};
+          const domainNodesMap: Record<string, KnowledgeNode[]> = {};
+          for (const d of domains) {
+            const ns = await getNodesByDomain(d.id);
+            domainNodesMap[d.id] = ns;
+            ns.forEach(n => {
+              allNodesMap[n.id] = { node: n, dName: d.name, dColor: d.color || '#8FA67F' };
+            });
+          }
 
           // Study nodes: Scheduled for today or overdue
+          const dueNodeIds = new Set<string>();
           for (const domain of domains) {
-            const nodes = await getNodesByDomain(domain.id);
+            const nodes = domainNodesMap[domain.id];
             
             const studyNodes = nodes.filter(n => {
               if (n.status === 'done') return false;
@@ -237,52 +468,109 @@ export function DashboardScreen() {
               return n.startDate.slice(0, 10) <= todayStr;
             });
 
-            studyNodes.forEach(n => {
-              todayTasks.push({
-                nodeId: n.id,
-                nodeTitle: n.title,
-                domainName: domain.name,
-                domainColor: domain.color || '#8FA67F',
-                estimatedHours: n.estimatedHours,
-                status: 'pending',
-                type: 'study'
-              });
-            });
+            studyNodes.forEach(n => dueNodeIds.add(n.id));
           }
 
           // Review nodes: Due today or overdue
           const allReviews = await getReviewSessions();
+          const reviewNodeIds = new Set<string>();
           for (const rs of allReviews) {
-            // Find active pending round that is due today or before
             const dueRound = rs.sessions.find(s => s.status === 'pending' && s.date <= todayStr);
             if (dueRound) {
-              // Resolve node details
-              let targetNode: KnowledgeNode | null = null;
-              let targetDomain: Domain | null = null;
-              
-              for (const d of domains) {
-                const ns = await getNodesByDomain(d.id);
-                const found = ns.find(n => n.id === rs.nodeId);
-                if (found) {
-                  targetNode = found;
-                  targetDomain = d;
-                  break;
+              reviewNodeIds.add(rs.nodeId);
+            }
+          }
+
+          // Build hierarchical tasks per domain
+          for (const domain of domains) {
+            const nodes = domainNodesMap[domain.id];
+            const dColor = domain.color || '#8FA67F';
+
+            // Find due study nodes in this domain
+            const domainDueStudy = nodes.filter(n => dueNodeIds.has(n.id));
+            // Find review nodes in this domain
+            const domainReviews: Array<{ nodeId: string; nodeTitle: string; roundIndex: number }> = [];
+            for (const rs of allReviews) {
+              const dueRound = rs.sessions.find(s => s.status === 'pending' && s.date <= todayStr);
+              if (dueRound) {
+                const nodeInfo = allNodesMap[rs.nodeId];
+                if (nodeInfo && nodeInfo.dName === domain.name) {
+                  domainReviews.push({
+                    nodeId: rs.nodeId,
+                    nodeTitle: nodeInfo.node.title,
+                    roundIndex: rs.sessions.indexOf(dueRound)
+                  });
+                  // Also mark review node as due for hierarchy
+                  dueNodeIds.add(rs.nodeId);
                 }
               }
+            }
 
-              if (targetNode) {
-                todayTasks.push({
-                  nodeId: rs.nodeId,
-                  nodeTitle: `复习: ${targetNode.title}`,
-                  domainName: targetDomain?.name || '未知领域',
-                  domainColor: targetDomain?.color || '#C8834A',
-                  estimatedHours: 0.5, // Default 0.5h for reviews
-                  status: 'pending',
-                  type: 'review',
-                  reviewRoundIndex: rs.sessions.indexOf(dueRound)
-                });
+            // Collect ancestor IDs for all due nodes in this domain
+            const ancestorIds = new Set<string>();
+            for (const n of domainDueStudy) {
+              let pid = n.parentId;
+              while (pid) {
+                ancestorIds.add(pid);
+                const parent = nodes.find(x => x.id === pid);
+                if (parent) pid = parent.parentId;
+                else break;
               }
             }
+            for (const r of domainReviews) {
+              const rn = allNodesMap[r.nodeId]?.node;
+              if (rn) {
+                let pid = rn.parentId;
+                while (pid) {
+                  ancestorIds.add(pid);
+                  const parent = nodes.find(x => x.id === pid);
+                  if (parent) pid = parent.parentId;
+                  else break;
+                }
+              }
+            }
+
+            // Build ordered hierarchical list via DFS
+            const domainTasks: DashboardTaskItem[] = [];
+            const rootNode = nodes.filter(n => n.parentId === null).sort((a, b) => a.order - b.order);
+            
+            const walk = (parentId: string | null, level: number) => {
+              const children = nodes.filter(n => n.parentId === parentId).sort((a, b) => a.order - b.order);
+              for (const child of children) {
+                const hasChildren = nodes.some(n => n.parentId === child.id);
+                const isDue = dueNodeIds.has(child.id);
+                const isAncestor = ancestorIds.has(child.id);
+                const isReview = domainReviews.some(r => r.nodeId === child.id);
+
+                if (isDue || isAncestor) {
+                  const reviewInfo = domainReviews.find(r => r.nodeId === child.id);
+                  // Check if this node is overdue (startDate < today)
+                  const nodeStartDate = child.startDate?.slice(0, 10);
+                  const isNodeOverdue = !!nodeStartDate && nodeStartDate < todayStr;
+                  
+                  domainTasks.push({
+                    nodeId: child.id,
+                    nodeTitle: isReview ? `复习: ${child.title}` : child.title,
+                    domainName: domain.name,
+                    domainColor: dColor,
+                    estimatedHours: isReview ? 0.5 : child.estimatedHours,
+                    status: isDue && !isAncestor ? (child.status === 'done' ? 'done' : 'pending') : 'pending',
+                    type: isReview ? 'review' : 'study',
+                    reviewRoundIndex: reviewInfo?.roundIndex,
+                    parentId: child.parentId,
+                    level,
+                    hasChildren,
+                    isOverdue: isNodeOverdue,
+                  });
+                }
+
+                if (hasChildren) {
+                  walk(child.id, level + 1);
+                }
+              }
+            };
+            walk(null, 0);
+            todayTasks.push(...domainTasks);
           }
 
           setTasks(todayTasks);
@@ -317,6 +605,15 @@ export function DashboardScreen() {
 
     loadPlan();
   }, [domains]);
+
+  // Click handler to select node and open note editor
+  const handleSelectNode = async (e: React.MouseEvent, nodeId: string) => {
+    e.stopPropagation();
+    setActiveNodeId(nodeId);
+    setEditorOpen(true);
+    const note = await getNote(nodeId);
+    setActiveNote(note || { id: nodeId, nodeId: nodeId, content: '', updatedAt: Date.now() });
+  };
 
   // Toggle task completion
   const toggleTask = async (task: DashboardTaskItem) => {
@@ -451,8 +748,9 @@ export function DashboardScreen() {
     }
   };
 
-  const doneCount = tasks.filter(t => t.status === 'done').length;
-  const totalHours = tasks.reduce((s, t) => s + t.estimatedHours, 0);
+  const doneCount = tasks.filter(t => t.status === 'done' && !t.hasChildren).length;
+  const todayHours = tasks.filter(t => !t.hasChildren && !t.isOverdue).reduce((s, t) => s + t.estimatedHours, 0);
+  const overdueHours = tasks.filter(t => !t.hasChildren && t.isOverdue).reduce((s, t) => s + t.estimatedHours, 0);
   const byDomain: Record<string, DashboardTaskItem[]> = {};
   tasks.forEach(t => {
     byDomain[t.domainName] = byDomain[t.domainName] || [];
@@ -460,196 +758,207 @@ export function DashboardScreen() {
   });
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 bg-[#FAF7F2]">
-      {/* Top Header */}
-      <div className="flex items-start justify-between mb-6 flex-shrink-0">
-        <div>
-          <h1 className="text-xl font-semibold text-[#2C2A29] mb-1" style={{ fontFamily: 'Cinzel, Georgia, serif' }}>
-            每日看板
-          </h1>
-          <div className="flex items-center gap-1.5 text-xs text-[#9E988F]">
-            <CalendarDays size={13} />
-            <span>{todayLabel}</span>
+    <div className="flex-grow flex h-svh overflow-hidden bg-[#FAF7F2]">
+      {/* Main Panel Content (Scrollable) */}
+      <div className="flex-1 overflow-y-auto p-6">
+        {/* Top Header */}
+        <div className="flex items-start justify-between mb-6 flex-shrink-0">
+          <div>
+            <h1 className="text-xl font-semibold text-[#2C2A29] mb-1" style={{ fontFamily: 'Cinzel, Georgia, serif' }}>
+              每日看板
+            </h1>
+            <div className="flex items-center gap-1.5 text-xs text-[#9E988F]">
+              <CalendarDays size={13} />
+              <span>{todayLabel}</span>
+            </div>
           </div>
+          <button
+            onClick={() => setShowSummary(!showSummary)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#EFEAE0] bg-[#FDFBF7] text-xs text-[#6E6A64] hover:bg-[#F3EEE6] transition-colors cursor-pointer"
+          >
+            <BarChart2 size={13} />
+            本周总结
+          </button>
         </div>
-        <button
-          onClick={() => setShowSummary(!showSummary)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#EFEAE0] bg-[#FDFBF7] text-xs text-[#6E6A64] hover:bg-[#F3EEE6] transition-colors cursor-pointer"
-        >
-          <BarChart2 size={13} />
-          本周总结
-        </button>
-      </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        {[
-          {
-            value: `${doneCount}/${tasks.length}`,
-            label: '今日任务进度',
-            color: '#2C2A29',
-            progress: tasks.length ? (doneCount / tasks.length) * 100 : 0
-          },
-          {
-            value: `${totalHours}h`,
-            label: '今日计划学习时长',
-            color: '#C8834A',
-            progress: null
-          },
-          {
-            value: String(domains.length),
-            label: '活跃学习领域',
-            color: '#3E4D3E',
-            progress: null
-          },
-        ].map(({ value, label, color, progress }) => (
-          <div key={label} className="bg-[#F3EEE6] border border-[#EFEAE0] rounded-xl p-4">
-            <p className="text-2xl font-bold" style={{ color }}>{value}</p>
-            <p className="text-[10px] text-[#9E988F] font-medium uppercase tracking-wider mt-0.5">{label}</p>
-            {progress !== null && (
-              <div className="mt-2.5 h-1.5 bg-[#EFEAE0] rounded-full overflow-hidden">
-                <motion.div
-                  initial={{ width: 0 }}
-                  animate={{ width: `${progress}%` }}
-                  transition={{ duration: 0.8 }}
-                  className="h-full bg-[#8FA67F] rounded-full"
-                />
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-
-      {/* AI Daily Summary Block */}
-      {config?.apiKey && tasks.length > 0 && (
-        <div className="bg-[#F3EEE6]/60 border border-[#EFEAE0] rounded-xl p-5 mb-6 relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
-            <Quote size={80} />
-          </div>
-
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-semibold text-[#8FA67F] flex items-center gap-1.5" style={{ fontFamily: 'Cinzel, Georgia, serif' }}>
-              <Quote size={12} className="rotate-180" />
-              今日寄语
-            </span>
-            
-            <button
-              onClick={handleGenerateAiSummary}
-              disabled={loadingAiSummary}
-              className="p-1 rounded hover:bg-[#EFEAE0] text-[#9E988F] hover:text-[#6E6A64]"
-              title="重新生成寄语"
-            >
-              <RefreshCcw size={12} className={loadingAiSummary ? 'animate-spin' : ''} />
-            </button>
-          </div>
-
-          {aiSummary ? (
-            <p className="text-xs text-[#6E6A64] leading-relaxed italic pr-6">
-              “{aiSummary}”
-            </p>
-          ) : (
-            <button
-              onClick={handleGenerateAiSummary}
-              disabled={loadingAiSummary}
-              className="text-xs font-medium text-[#8FA67F] hover:text-[#5D7052] flex items-center gap-1 bg-[#FAF7F2] border border-[#EFEAE0] px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
-            >
-              {loadingAiSummary ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-              生成今日 AI 寄语
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Weekly Summary Panel */}
-      <AnimatePresence>
-        {showSummary && <WeeklySummaryPanel tasks={tasks} />}
-      </AnimatePresence>
-
-      {/* Task List */}
-      {loading ? (
-        <div className="space-y-3">
-          {[1, 2, 3].map(i => (
-            <div key={i} className="h-16 rounded-xl border border-[#EFEAE0] bg-[#F3EEE6] animate-pulse" />
-          ))}
-        </div>
-      ) : tasks.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <div className="w-14 h-14 rounded-2xl bg-[#ECE6DA] flex items-center justify-center mb-4">
-            <BookOpen size={24} className="text-[#9E988F]" />
-          </div>
-          <h3 className="text-[#6E6A64] font-medium mb-1">今日无待办学习任务</h3>
-          <p className="text-xs text-[#9E988F] max-w-[280px]">
-            去学习规划页为知识点设置开始日期，或者到复习规划中开启今日复习任务。
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-5">
-          {Object.entries(byDomain).map(([domainName, domainTasks]) => (
-            <div key={domainName}>
-              {/* Group label */}
-              <div className="flex items-center gap-2 mb-2 px-1">
-                <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: domainTasks[0].domainColor }} />
-                <span className="text-xs font-bold text-[#6E6A64] uppercase tracking-wider">{domainName}</span>
-                <span className="text-[10px] text-[#9E988F] bg-[#EFEAE0] px-2 py-0.5 rounded-full ml-1">
-                  {domainTasks.filter(t => t.status === 'done').length}/{domainTasks.length} 完成
-                </span>
-              </div>
-
-              {/* Group items */}
-              <div className="space-y-2">
-                {domainTasks.map(task => {
-                  const done = task.status === 'done';
-                  const isReview = task.type === 'review';
-
-                  return (
-                    <motion.div
-                      key={`${task.nodeId}-${task.type}`}
-                      layout
-                      whileHover={{ x: 2 }}
-                      className={cn(
-                        'flex items-center gap-3 p-3.5 rounded-xl border cursor-pointer transition-all',
-                        done
-                          ? 'border-[#EFEAE0] bg-[#F3EEE6]/50 opacity-60'
-                          : 'border-[#EFEAE0] bg-[#F3EEE6] hover:border-[#D8D0C4] hover:shadow-sm'
-                      )}
-                      onClick={() => toggleTask(task)}
-                    >
-                      <motion.div whileTap={{ scale: 0.9 }}>
-                        {done ? (
-                          <CheckCircle2 size={18} className="text-[#5D7052] flex-shrink-0" />
-                        ) : (
-                          <Circle size={18} className="text-[#9E988F] flex-shrink-0 hover:text-[#8FA67F] transition-colors" />
-                        )}
-                      </motion.div>
-
-                      <div className="flex-1 min-w-0">
-                        <p className={cn(
-                          'text-sm font-medium leading-snug truncate',
-                          done ? 'line-through text-[#9E988F]' : 'text-[#2C2A29]'
-                        )}>
-                          {task.nodeTitle}
-                        </p>
-                      </div>
-
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        {isReview && (
-                          <span className="text-[9px] font-semibold bg-[#C8834A]/12 text-[#C8834A] border border-[#C8834A]/20 px-1.5 py-0.5 rounded-full uppercase">
-                            复习
-                          </span>
-                        )}
-                        <span className="flex items-center gap-1 text-xs text-[#9E988F]">
-                          <Clock size={11} />
-                          {task.estimatedHours}h
-                        </span>
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </div>
+        {/* Stats Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+          {[
+            {
+              value: `${doneCount}/${tasks.length}`,
+              label: '今日任务进度',
+              color: '#2C2A29',
+              progress: tasks.length ? (doneCount / tasks.length) * 100 : 0
+            },
+            {
+              value: `${todayHours}h`,
+              label: '今日规划时长',
+              color: '#C8834A',
+              progress: null
+            },
+            {
+              value: `${overdueHours}h`,
+              label: '已逾期时长',
+              color: overdueHours > 0 ? '#B36B5C' : '#9E988F',
+              progress: null
+            },
+            {
+              value: String(domains.length),
+              label: '活跃学习领域',
+              color: '#3E4D3E',
+              progress: null
+            },
+          ].map(({ value, label, color, progress }) => (
+            <div key={label} className="bg-[#F3EEE6] border border-[#EFEAE0] rounded-xl p-4 py-5">
+              <p className="text-3xl font-bold" style={{ color }}>{value}</p>
+              <p className="text-[10px] text-[#9E988F] font-medium uppercase tracking-wider mt-1">{label}</p>
+              {progress !== null && (
+                <div className="mt-2.5 h-1.5 bg-[#EFEAE0] rounded-full overflow-hidden">
+                  <motion.div
+                    initial={{ width: 0 }}
+                    animate={{ width: `${progress}%` }}
+                    transition={{ duration: 0.8 }}
+                    className="h-full bg-[#8FA67F] rounded-full"
+                  />
+                </div>
+              )}
             </div>
           ))}
         </div>
-      )}
+
+        {/* Overdue Warning Banner */}
+        {overdueHours > 0 && (
+          <div className="flex items-center gap-2.5 p-3.5 rounded-xl border border-[#B36B5C]/30 bg-[#FAF1E6] text-xs text-[#B36B5C] mb-4">
+            <AlertCircle size={15} className="text-[#B36B5C] flex-shrink-0" />
+            <div className="flex-1">
+              <span className="font-semibold">逾期任务提醒：</span>
+              您有 <span className="font-bold">{overdueHours}h</span> 的学习任务已逾期未完成，建议尽快安排时间补上进度。
+            </div>
+          </div>
+        )}
+
+        {/* Global Limit Warning Banner */}
+        {config?.globalDailyHours && todayHours > config.globalDailyHours && (
+          <div className="flex items-center gap-2.5 p-3.5 rounded-xl border border-[#C8834A]/30 bg-[#FAF1E6] text-xs text-[#C8834A] mb-6">
+            <AlertCircle size={15} className="text-[#C8834A] flex-shrink-0" />
+            <div className="flex-1">
+              <span className="font-semibold">学习时间超限警示：</span>
+              今日规划的各个领域学习任务总工时共计 <span className="font-bold">{todayHours}h</span>，
+              已超出了您在系统设置中设定的全局每日学习时间上限 <span className="font-bold">{config.globalDailyHours}h</span>。
+              建议前往学习规划页面，对部分知识点日程进行微调。
+            </div>
+          </div>
+        )}
+
+        {/* AI Daily Summary Block */}
+        {config?.apiKey && tasks.length > 0 && (
+          <div className="bg-[#F3EEE6]/60 border border-[#EFEAE0] rounded-xl p-5 mb-6 relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
+              <Quote size={80} />
+            </div>
+
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-semibold text-[#8FA67F] flex items-center gap-1.5" style={{ fontFamily: 'Cinzel, Georgia, serif' }}>
+                <Quote size={12} className="rotate-180" />
+                今日寄语
+              </span>
+              
+              <button
+                onClick={handleGenerateAiSummary}
+                disabled={loadingAiSummary}
+                className="p-1 rounded hover:bg-[#EFEAE0] text-[#9E988F] hover:text-[#6E6A64]"
+                title="重新生成寄语"
+              >
+                <RefreshCcw size={12} className={loadingAiSummary ? 'animate-spin' : ''} />
+              </button>
+            </div>
+
+            {aiSummary ? (
+              <p className="text-xs text-[#6E6A64] leading-relaxed italic pr-6">
+                “{aiSummary}”
+              </p>
+            ) : (
+              <button
+                onClick={handleGenerateAiSummary}
+                disabled={loadingAiSummary}
+                className="text-xs font-medium text-[#8FA67F] hover:text-[#5D7052] flex items-center gap-1 bg-[#FAF7F2] border border-[#EFEAE0] px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
+              >
+                {loadingAiSummary ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                生成今日 AI 寄语
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Weekly Summary Panel */}
+        <AnimatePresence>
+          {showSummary && <WeeklySummaryPanel tasks={tasks} />}
+        </AnimatePresence>
+
+        {/* Task List */}
+        {loading ? (
+          <div className="space-y-3">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="h-16 rounded-xl border border-[#EFEAE0] bg-[#F3EEE6] animate-pulse" />
+            ))}
+          </div>
+        ) : tasks.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <div className="w-14 h-14 rounded-2xl bg-[#ECE6DA] flex items-center justify-center mb-4">
+              <BookOpen size={24} className="text-[#9E988F]" />
+            </div>
+            <h3 className="text-[#6E6A64] font-medium mb-1">今日无待办学习任务</h3>
+            <p className="text-xs text-[#9E988F] max-w-[280px]">
+              去学习规划页为知识点设置开始日期，或者到复习规划中开启今日复习任务。
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-5">
+            {Object.entries(byDomain).map(([domainName, domainTasks]) => (
+              <div key={domainName}>
+                {/* Group label */}
+                <div className="flex items-center gap-2 mb-2 px-1">
+                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: domainTasks[0]?.domainColor }} />
+                  <span className="text-xs font-bold text-[#6E6A64] uppercase tracking-wider">{domainName}</span>
+                  <span className="text-[10px] text-[#9E988F] bg-[#EFEAE0] px-2 py-0.5 rounded-full ml-1">
+                    {domainTasks.filter(t => t.status === 'done' && !t.hasChildren).length}/{domainTasks.filter(t => !t.hasChildren).length} 完成
+                  </span>
+                </div>
+
+                {/* Hierarchical task items */}
+                <HierarchicalTaskList
+                  tasks={domainTasks}
+                  allTasks={tasks}
+                  onToggle={toggleTask}
+                  onSelectNode={handleSelectNode}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Calendar View Block */}
+        <div className="mt-8 border-t border-[#EFEAE0] pt-6 pb-4">
+          <div className="flex items-center gap-2 mb-4 px-1">
+            <span className="text-sm font-semibold text-[#2C2A29]" style={{ fontFamily: 'Cinzel, Georgia, serif' }}>
+              全景学习日历
+            </span>
+            <span className="text-[10px] text-[#9E988F] bg-[#EFEAE0] px-2 py-0.5 rounded-full">
+              所有领域
+            </span>
+          </div>
+          <div className="bg-[#FDFBF7] border border-[#EFEAE0] rounded-xl overflow-hidden shadow-sm">
+            <CalendarView showAllDomains={true} />
+          </div>
+        </div>
+      </div>
+
+      {/* Note Editor Side Panel */}
+      <AnimatePresence>
+        {editorOpen && (
+          <NoteEditor />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

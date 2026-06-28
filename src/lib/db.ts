@@ -14,6 +14,9 @@ export type Domain = {
   createdAt: number;
   color?: string;
   weekendPolicy?: 'none' | 'reduced' | 'full'; // none = 不安排, reduced = 减少安排, full = 正常安排
+  goal?: string;      // 学习目的
+  scope?: string;     // 范围/方向约束
+  industry?: string;  // 行业/应用场景
 };
 
 export type NodeStatus = 'pending' | 'in_progress' | 'done';
@@ -65,6 +68,10 @@ export type TokenConfig = {
   notionDatabaseId?: string;
   userName?: string;
   userAvatar?: string;
+  
+  // System and Learning Preferences
+  globalDailyHours?: number;
+  learningPreferences?: string;
 };
 
 export type ReviewTemplate = {

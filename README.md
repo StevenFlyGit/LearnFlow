@@ -1,53 +1,83 @@
-<<<<<<< HEAD
-A minimal Next.js starter for building apps inside the [Eazo](https://eazo.ai) platform. Includes a working example of the Eazo session token flow: the app requests the encrypted user token from the host via `postMessage`, sends it to a Next.js API route, decrypts it server-side with `@eazo/node-sdk`, and returns the user profile.
+# LearnFlow — AI 驱动的个人学习规划与复习工作流系统
 
-## Getting Started
+LearnFlow 是一个本地优先（Local-First）、AI 驱动的渐进式个人学习与知识复习管理系统。该应用旨在帮助学习者将任何庞大的学习目标自动拆解为每日可执行的任务，并结合艾宾浩斯记忆遗忘曲线进行复习规划，同时支持笔记整理与 Notion 同步。
 
-Install dependencies with Bun:
+---
+
+## 🌟 核心特性
+
+- 📅 **学习规划与排期 (Learning Planning)**
+  - **知识树视图 (Tree View)**：支持树状层级结构，支持节点拖拽/上下移动、添加同级/子级知识点。支持手动修改最末端叶子节点学时并自底向上级联更新父节点与领域总工时。
+  - **日历排期视图 (Calendar View)**：内置前序深度优先遍历（DFS）算法，结合领域每日设定时间及周末休假策略进行自动排期。支持从指定叶子节点向后进行部分排期，并智能避开已排期工时冲突。
+  - **AI 知识树生成**：输入任意领域名称，AI 可一键自动为您生成合理的知识树体系。
+
+- 📋 **每日看板 (Daily Dashboard)**
+  - 集中展示今日计划、今日待复习节点、逾期未完成任务。
+  - 支持每日看板状态标记，并与 Zustand Store 及本地 IndexedDB 进行实时自愈性同步。
+  - **每周 AI 总结**：一键读取本周学习笔记并生成高阶学习复习建议。
+
+- 🔄 **复习规划与模板管理 (Review Manager)**
+  - 基于间隔重复算法（如艾宾浩斯遗忘曲线）。
+  - 提供今日待复习、全部复习计划列表及月度复习日历三大视图。
+  - 支持自定义复习轮次与时间间隔模板。
+
+- ✍️ **Markdown 笔记与 AI 强化 (Note Editor)**
+  - 内置 Markdown 编辑与实时预览双栏面板。
+  - **AI 笔记整理**：提供逻辑纠错与结构重排的 AI 双栏对比视图，支持一键采纳覆盖。
+  - **AI 知识衍生**：根据当前笔记内容提取衍生知识点与强化思路，支持快捷插入。
+  - **子知识点目录**：在父级节点预览中，自动动态渲染其直接子节点的标题和当前学习状态。
+
+- 🔌 **Token 独立配置 (Multimodal LLM Config)**
+  - 提供极其弹性的 OpenAI Chat Completions 和 Anthropic Messages 双协议 API 配置。
+  - 支持自定义 Base URL（包括本地反向代理、三方中转），内置 URL 格式自动净化校验。
+  - 拥有健壮的响应 Payload 混合解析器，容错并自动适配不同服务商返回的 JSON 结构。
+
+- 📥 **Notion 增量同步 (Notion Integration)**
+  - 支持将本地生成的知识树与对应笔记一键同步至 Notion 知识库中。
+  - 支持多层级 Blocks 嵌套转换（包含标题、代码块、列表等格式）并进行页级增量追加。
+
+- 📰 **RSS 订阅与资讯检索 (RSS Reader)**
+  - 可自由添加技术博客、文献等 RSS 源，并在阅读器中便捷检索与当前选中的知识点相关的资讯。
+
+---
+
+## 🛠️ 技术栈
+
+- **前端框架**：Next.js (App Router) + React
+- **动效库**：Framer Motion
+- **状态管理**：Zustand
+- **样式方案**：Tailwind CSS (Sage Flow 温暖奶油色系视觉)
+- **本地存储**：IndexedDB (基于 `idb` 库)
+- **图标系统**：Lucide React
+- **构建运行**：Bun
+
+---
+
+## 🚀 快速开始
+
+### 1. 安装依赖
+
+推荐使用 [Bun](https://bun.sh) 进行包管理：
 
 ```bash
 bun install
 ```
 
-If dependency installation stalls on this machine during `sharp` setup, use:
+> **注意**：如果在依赖安装过程中，`sharp` 编译环境卡住，请使用以下命令跳过全局 libvips 检测：
+> ```bash
+> SHARP_IGNORE_GLOBAL_LIBVIPS=1 bun install
+> ```
 
-```bash
-SHARP_IGNORE_GLOBAL_LIBVIPS=1 bun install
-```
-
-Then start the development server:
+### 2. 启动开发服务器
 
 ```bash
 bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+启动后在浏览器中打开 [http://localhost:3000](http://localhost:3000) 即可使用。该系统所有用户数据与规划进度均存储在您浏览器的 IndexedDB 本地数据库中，100% 离线可用，隐私安全。
 
-## Environment Variables
+---
 
-Copy `.env.example` to `.env` and fill in your private key:
+## 🔒 隐私与配置
 
-```bash
-cp .env.example .env
-```
-
-| Variable | Description |
-|---|---|
-| `EAZO_PRIVATE_KEY` | Your Eazo developer private key (hex, 64 chars). Used server-side to decrypt the user session token. |
-
-You can generate a keypair in the Eazo developer settings. Never expose the private key to the browser.
-
-## Learn More
-
-- [Eazo Documentation](https://docs.eazo.ai)
-- [Next.js Documentation](https://nextjs.org/docs)
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-=======
-# LearnFlow
-一个学习规划的工作流Agent，目前开发的还不太完善
->>>>>>> 7b94f04cdea9b2e0df8fe7ba48a3fb8192737ea9
+所有 AI 能力与 Notion 同步需要您在系统内的 **Token 配置** 页面中配置相应的 API 密钥。这些敏感密钥均持久化存放在您本地的浏览器中，在调用 AI 时仅通过 Next.js 的本地中转 API 进行 Header 注入，绝不会上传至第三方服务器。

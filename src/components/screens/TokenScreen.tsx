@@ -1,5 +1,6 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { Settings, Eye, EyeOff, CheckCircle2, Loader2, User, Key, Globe } from 'lucide-react';
 import { useStore } from '@/lib/store';
@@ -33,11 +34,13 @@ const INPUT_CLASS = 'w-full px-3 py-2.5 rounded-lg border border-[#EFEAE0] bg-[#
 
 export function TokenScreen() {
   const { config, setConfig } = useStore();
+  const router = useRouter();
   const [form, setForm] = useState<Omit<TokenConfig, 'id'>>({
     aiProvider: 'openai', apiKey: '', modelName: 'gpt-4o-mini', baseUrl: '',
     openaiApiKey: '', openaiModelName: 'gpt-4o-mini', openaiBaseUrl: '',
     anthropicApiKey: '', anthropicModelName: 'claude-3-5-sonnet-20241022', anthropicBaseUrl: '',
     notionToken: '', notionDatabaseId: '', userName: '', userAvatar: '',
+    globalDailyHours: undefined, learningPreferences: '',
   });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -99,9 +102,23 @@ export function TokenScreen() {
     try {
       const c: TokenConfig = { id: 'config', ...form };
       await putConfig(c);
+      
+      // 检查是否修改了影响排期的配置
+      const dailyHoursChanged = config?.globalDailyHours !== form.globalDailyHours;
+      
       setConfig(c);
       setSaved(true);
-      toast.success('配置已保存');
+      
+      if (dailyHoursChanged) {
+        toast.success('配置已保存');
+        const shouldApply = confirm('配置已保存。检测到全局每日学习时间已变更，是否立即前往规划页重新排期？');
+        if (shouldApply) {
+          router.push('/planning');
+        }
+      } else {
+        toast.success('配置已保存');
+      }
+      
       setTimeout(() => setSaved(false), 2500);
     } catch { toast.error('保存失败'); }
     finally { setSaving(false); }
@@ -224,21 +241,61 @@ export function TokenScreen() {
             </div>
           </div>
 
-          {/* User Profile */}
+          {/* System & Preferences */}
           <div className="bg-[#F3EEE6] border border-[#EFEAE0] rounded-xl p-5">
             <h2 className="text-sm font-semibold text-[#2C2A29] mb-4 flex items-center gap-2">
-              <User size={14} className="text-[#8FA67F]" />用户信息
+              <User size={14} className="text-[#8FA67F]" />系统与偏好设置 (System & Preferences)
             </h2>
-            <div className="grid grid-cols-2 gap-3">
+            
+            <div className="space-y-4">
+              {/* Profile Card */}
               <div>
-                <label className="text-xs font-medium text-[#6E6A64] mb-1.5 block">显示名称</label>
-                <input value={form.userName || ''} onChange={e => setForm(f => ({ ...f, userName: e.target.value }))}
-                  placeholder="学习者" className={INPUT_CLASS} />
+                <h3 className="text-xs font-semibold text-[#6E6A64] mb-2">个人资料</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] font-medium text-[#9E988F] mb-1 block">显示名称</label>
+                    <input value={form.userName || ''} onChange={e => setForm(f => ({ ...f, userName: e.target.value }))}
+                      placeholder="学习者" className={INPUT_CLASS} />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-medium text-[#9E988F] mb-1 block">头像 URL</label>
+                    <input value={form.userAvatar || ''} onChange={e => setForm(f => ({ ...f, userAvatar: e.target.value }))}
+                      placeholder="https://..." className={INPUT_CLASS} />
+                  </div>
+                </div>
               </div>
-              <div>
-                <label className="text-xs font-medium text-[#6E6A64] mb-1.5 block">头像 URL</label>
-                <input value={form.userAvatar || ''} onChange={e => setForm(f => ({ ...f, userAvatar: e.target.value }))}
-                  placeholder="https://..." className={INPUT_CLASS} />
+
+              {/* Learning Preferences */}
+              <div className="border-t border-[#EFEAE0]/60 pt-3.5">
+                <h3 className="text-xs font-semibold text-[#6E6A64] mb-2">学习偏好</h3>
+                <div>
+                  <label className="text-[11px] font-medium text-[#9E988F] mb-1 block">
+                    全局每日学习时间上限 (小时)
+                  </label>
+                  <input 
+                    type="number" 
+                    min="1" 
+                    max="24"
+                    value={form.globalDailyHours ?? ''} 
+                    onChange={e => {
+                      const val = e.target.value;
+                      setForm(f => ({ 
+                        ...f, 
+                        globalDailyHours: val === '' ? undefined : Math.min(24, Math.max(1, parseInt(val) || 1)) 
+                      }));
+                    }}
+                    placeholder="不限制" 
+                    className={INPUT_CLASS} 
+                  />
+                  <span className="text-[10px] text-[#9E988F] mt-1 block">
+                    各领域总工时超标时将触发视觉警告标志
+                  </span>
+                </div>
+                <div className="mt-3">
+                  <label className="text-[11px] font-medium text-[#9E988F] mb-1 block">学习偏好备注 (未来扩展)</label>
+                  <input value={form.learningPreferences || ''} onChange={e => setForm(f => ({ ...f, learningPreferences: e.target.value }))}
+                    placeholder="例如：倾向清晨学习、数学偏好等" className={INPUT_CLASS} />
+                </div>
               </div>
             </div>
           </div>

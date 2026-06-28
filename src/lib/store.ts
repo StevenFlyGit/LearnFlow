@@ -78,11 +78,20 @@ export const useStore = create<Store>((set) => ({
   setActiveDomainId: (id) => set({ activeDomainId: id, activeNodeId: null, editorOpen: false }),
   nodes: [],
   setNodes: (nodes) => set({ nodes }),
-  upsertNode: (n) => set((s) => ({
-    nodes: s.nodes.some(x => x.id === n.id)
-      ? s.nodes.map(x => x.id === n.id ? n : x)
-      : [...s.nodes, n],
-  })),
+  upsertNode: (n) => set((s) => {
+    // Only upsert the node into the active domain's nodes list if the domainId matches.
+    const isSameDomain = n.domainId === s.activeDomainId;
+    if (!isSameDomain) {
+      return {
+        nodes: s.nodes.filter(x => x.id !== n.id)
+      };
+    }
+    return {
+      nodes: s.nodes.some(x => x.id === n.id)
+        ? s.nodes.map(x => x.id === n.id ? n : x)
+        : [...s.nodes, n],
+    };
+  }),
   removeNode: (id) => set((s) => ({ nodes: s.nodes.filter(x => x.id !== id) })),
 
   activeNodeId: null,

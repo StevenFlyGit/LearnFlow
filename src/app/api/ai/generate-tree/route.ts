@@ -7,7 +7,7 @@ import { sanitizeBaseUrl } from '@/utils/utils';
 import fs from 'fs';
 
 export async function POST(req: NextRequest) {
-  const { domain, dailyHours, apiKey, provider, modelName, baseUrl } = await req.json();
+  const { domain, dailyHours, apiKey, provider, modelName, baseUrl, goal, scope, industry } = await req.json();
 
   if (!apiKey) {
     return new Response(JSON.stringify({ error: '请先在 Token 配置页填写 API Key' }), {
@@ -22,8 +22,14 @@ export async function POST(req: NextRequest) {
 - 结构：顶层为 2-3 个大模块，每个大模块下有 2-3 个子模块，每个子模块下有 2-3 个具体知识点（请严格控制总节点数在 20-30 个以内，以防生成文本过长被系统截断）
 - 每个节点包含：title（标题）、description（极简描述，15字以内）、estimatedHours（预计学习小时数，整数）、children（子节点数组）
 - 叶子节点 children 为空数组
+- **重要：每个叶子节点的 estimatedHours 不能超过学习者每日可投入的时间，如果某个知识点需要较长时间学习，请将其拆分为多个子知识点**
 - 预计时间要合理，总计不超过 200 小时
 - 用中文输出所有标题和描述
+- 如果用户提供了学习目的、范围约束或行业背景，请据此定制知识树的内容侧重：
+  - 优先安排与用户需求直接相关的知识模块
+  - 即使用户提供了范围约束，也应包含该领域不可或缺的基础知识
+  - 结合行业背景安排实践应用相关的知识点
+  - 根据学习目的调整理论深度（概念了解 vs 实践应用 vs 深入研究）
 
 示例格式：
 {
@@ -54,7 +60,11 @@ export async function POST(req: NextRequest) {
 
 只输出 JSON，不要有任何其他文字。`;
 
-  const userPrompt = `请为「${domain}」生成完整的学习知识树。学习者每天可投入 ${dailyHours} 小时。`;
+  let userPrompt = `请为「${domain}」生成完整的学习知识树。`;
+  if (goal) userPrompt += `\n学习目的：${goal}`;
+  if (scope) userPrompt += `\n范围/方向约束：${scope}`;
+  if (industry) userPrompt += `\n行业/应用场景：${industry}`;
+  userPrompt += `\n学习者每天可投入 ${dailyHours} 小时，请确保每个叶子节点的预估时间不超过 ${dailyHours} 小时。`;
 
   const endpoint = sanitizeBaseUrl(baseUrl, provider);
   const model = modelName || (provider === 'openai' ? 'gpt-4o-mini' : provider === 'deepseek' ? 'deepseek-chat' : 'claude-3-5-sonnet-20241022');

@@ -260,41 +260,47 @@ export function ReviewScreen() {
       <AnimatePresence>
         {showAddPlan && (
           <AddPlanModal
-            nodes={allNodes.filter(n => n.status === 'done' || n.status === 'in_progress')}
+            nodes={allNodes}
             templates={reviewTemplates}
             domains={domains}
             onClose={() => setShowAddPlan(false)}
-            onSave={async (nodeId, templateId, learnedAt) => {
+            onSave={async (nodeIds, templateId, learnedAt) => {
               const template = reviewTemplates.find(t => t.id === templateId);
               if (!template) return;
               
-              // Calculate dates
-              const sessions: ReviewSessionItem[] = template.intervals.map(interval => {
-                const date = new Date(learnedAt);
-                date.setDate(date.getDate() + interval);
-                return {
-                  date: date.toISOString().slice(0, 10),
-                  status: 'pending' as const
+              let successCount = 0;
+              for (const nodeId of nodeIds) {
+                const sessions: ReviewSessionItem[] = template.intervals.map(interval => {
+                  const date = new Date(learnedAt);
+                  date.setDate(date.getDate() + interval);
+                  return {
+                    date: date.toISOString().slice(0, 10),
+                    status: 'pending' as const
+                  };
+                });
+
+                const newSession: ReviewSession = {
+                  id: `rs_${Date.now()}_${nodeId}`,
+                  nodeId,
+                  templateId,
+                  learnedAt,
+                  sessions,
+                  createdAt: Date.now(),
+                  updatedAt: Date.now()
                 };
-              });
 
-              const newSession: ReviewSession = {
-                id: `rs_${Date.now()}`,
-                nodeId,
-                templateId,
-                learnedAt,
-                sessions,
-                createdAt: Date.now(),
-                updatedAt: Date.now()
-              };
+                try {
+                  await putReviewSession(newSession);
+                  upsertReviewSession(newSession);
+                  successCount++;
+                } catch {
+                  toast.error(`节点创建复习计划失败`);
+                }
+              }
 
-              try {
-                await putReviewSession(newSession);
-                upsertReviewSession(newSession);
-                toast.success('复习计划创建成功');
+              if (successCount > 0) {
+                toast.success(`成功创建 ${successCount} 个复习计划`);
                 setShowAddPlan(false);
-              } catch {
-                toast.error('创建复习计划失败');
               }
             }}
           />
@@ -801,28 +807,101 @@ function AddPlanModal({
   templates: ReviewTemplate[];
   domains: Domain[];
   onClose: () => void;
-  onSave: (nodeId: string, templateId: string, learnedAt: number) => Promise<void>;
+  onSave: (nodeIds: string[], templateId: string, learnedAt: number) => Promise<void>;
 }) {
-  const [selectedNodeId, setSelectedNodeId] = useState('');
+  const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
   const [selectedTemplateId, setSelectedTemplateId] = useState(templates[0]?.id || '');
   const [learnedDate, setLearnedDate] = useState(new Date().toISOString().slice(0, 10));
   const [search, setSearch] = useState('');
+  const [expandedTree, setExpandedTree] = useState<Record<string, boolean>>({});
 
-  // Filter nodes matching search query
-  const filteredNodes = nodes.filter(n => {
-    const dName = domains.find(d => d.id === n.domainId)?.name || '';
-    return n.title.toLowerCase().includes(search.toLowerCase()) ||
-           dName.toLowerCase().includes(search.toLowerCase());
-  });
+  // Initialize all domains as expanded
+  useEffect(() => {
+    const init: Record<string, boolean> = {};
+    domains.forEach(d => { init[`d_${d.id}`] = true; });
+    setExpandedTree(init);
+  }, [domains]);
+
+  const toggleNodeSelection = (nodeId: string) => {
+    setSelectedNodeIds(prev => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) next.delete(nodeId);
+      else next.add(nodeId);
+      return next;
+    });
+  };
+
+  // Build tree structure: domain -> root nodes -> children
+  const treeByDomain = domains.map(domain => {
+    const domainNodes = nodes
+      .filter(n => n.domainId === domain.id)
+      .filter(n => !search || n.title.toLowerCase().includes(search.toLowerCase()))
+      .sort((a, b) => a.level - b.level || a.order - b.order);
+    return { domain, nodes: domainNodes };
+  }).filter(g => g.nodes.length > 0);
+
+  const toggleTreeItem = (key: string) => {
+    setExpandedTree(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const renderTreeNodes = (allDomainNodes: KnowledgeNode[], parentId: string | null, depth: number): React.ReactNode => {
+    return allDomainNodes
+      .filter(n => n.parentId === parentId)
+      .sort((a, b) => a.order - b.order)
+      .map(node => {
+        const children = allDomainNodes.filter(n => n.parentId === node.id);
+        const hasChildren = children.length > 0;
+        const treeKey = `n_${node.id}`;
+        const isExpanded = expandedTree[treeKey] !== false;
+        const selected = selectedNodeIds.has(node.id);
+
+        return (
+          <div key={node.id}>
+            <div
+              onClick={() => toggleNodeSelection(node.id)}
+              className={cn(
+                'flex items-center gap-2 px-3 py-1.5 cursor-pointer transition-colors text-xs rounded-md mx-1',
+                selected ? 'bg-[#8FA67F]/15 text-[#3E4D3E] font-medium' : 'hover:bg-[#FAF7F2] text-[#6E6A64]'
+              )}
+              style={{ paddingLeft: `${8 + depth * 16}px` }}
+            >
+              {/* Expand arrow for non-leaf */}
+              {hasChildren ? (
+                <div
+                  className="w-3.5 h-3.5 flex items-center justify-center flex-shrink-0 text-[#9E988F]"
+                  onClick={e => { e.stopPropagation(); toggleTreeItem(treeKey); }}
+                >
+                  {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                </div>
+              ) : (
+                <div className="w-3.5 flex-shrink-0" />
+              )}
+              {/* Checkbox */}
+              <div className={cn(
+                'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-all',
+                selected ? 'bg-[#8FA67F] border-[#8FA67F]' : 'border-[#D8D0C4]'
+              )}>
+                {selected && <Check size={9} className="text-white" />}
+              </div>
+              <span className="truncate flex-1">{node.title}</span>
+              <span className="text-[9px] text-[#9E988F] flex-shrink-0">
+                {node.status === 'done' ? '已完成' : node.status === 'in_progress' ? '进行中' : '未开始'}
+              </span>
+            </div>
+            {hasChildren && isExpanded && renderTreeNodes(allDomainNodes, node.id, depth + 1)}
+          </div>
+        );
+      });
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedNodeId) {
-      toast.error('请选择一个学习节点');
+    if (selectedNodeIds.size === 0) {
+      toast.error('请至少选择一个学习节点');
       return;
     }
     const timestamp = new Date(learnedDate).getTime();
-    onSave(selectedNodeId, selectedTemplateId, timestamp);
+    onSave(Array.from(selectedNodeIds), selectedTemplateId, timestamp);
   };
 
   return (
@@ -831,10 +910,12 @@ function AddPlanModal({
         initial={{ opacity: 0, scale: 0.95, y: 15 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className="bg-[#FDFBF7] border border-[#EFEAE0] rounded-2xl p-6 w-full max-w-lg shadow-xl flex flex-col"
+        className="bg-[#FDFBF7] border border-[#EFEAE0] rounded-2xl w-full max-w-5xl shadow-xl flex flex-col"
+        style={{ height: '80vh', minHeight: '520px' }}
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-[#EFEAE0] pb-3 mb-4 flex-shrink-0">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#EFEAE0] flex-shrink-0">
           <h3 className="text-base font-semibold text-[#2C2A29]" style={{ fontFamily: 'Cinzel, Georgia, serif' }}>
             添加复习计划
           </h3>
@@ -843,98 +924,136 @@ function AddPlanModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4 flex-1">
-          {/* Node selector */}
-          <div>
-            <label className="text-xs font-medium text-[#6E6A64] block mb-1">
-              选择知识点 (进行中/已完成)
-            </label>
-            <div className="relative mb-2">
-              <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9E988F]" />
-              <input
-                type="text"
-                placeholder="搜索知识点或学习领域..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="w-full pl-8 pr-3 py-2 text-xs rounded-lg border border-[#EFEAE0] bg-[#F3EEE6] text-[#2C2A29] focus:outline-none focus:ring-1 focus:ring-[#8FA67F]"
-              />
+        <form onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex-1 grid grid-cols-2 gap-0 overflow-hidden">
+            {/* Left: Hierarchical node selector */}
+            <div className="flex flex-col border-r border-[#EFEAE0] overflow-hidden">
+              <div className="px-4 pt-4 pb-2 flex-shrink-0">
+                <label className="text-xs font-medium text-[#6E6A64] block mb-2">
+                  选择知识点
+                </label>
+                <div className="relative">
+                  <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9E988F]" />
+                  <input
+                    type="text"
+                    placeholder="搜索知识点..."
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    className="w-full pl-8 pr-3 py-2 text-xs rounded-lg border border-[#EFEAE0] bg-[#F3EEE6] text-[#2C2A29] focus:outline-none focus:ring-1 focus:ring-[#8FA67F]"
+                  />
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto px-2 pb-3">
+                {treeByDomain.length === 0 ? (
+                  <p className="text-[10px] text-[#9E988F] text-center py-8">无匹配的知识点</p>
+                ) : (
+                  <div className="space-y-1">
+                    {treeByDomain.map(({ domain, nodes: domainNodes }) => {
+                      const domainKey = `d_${domain.id}`;
+                      const domainExpanded = expandedTree[domainKey] !== false;
+                      const rootNodes = domainNodes.filter(n => n.parentId === null);
+
+                      return (
+                        <div key={domain.id} className="mb-1">
+                          <button
+                            type="button"
+                            onClick={() => toggleTreeItem(domainKey)}
+                            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-[#EFEAE0]/60 transition-colors text-left"
+                          >
+                            {domainExpanded ? <ChevronDown size={12} className="text-[#9E988F]" /> : <ChevronRight size={12} className="text-[#9E988F]" />}
+                            <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: domain.color }} />
+                            <span className="text-xs font-semibold text-[#2C2A29] flex-1 truncate">{domain.name}</span>
+                            <span className="text-[9px] text-[#9E988F]">{domainNodes.length}</span>
+                          </button>
+                          {domainExpanded && (
+                            <div className="mt-0.5">
+                              {renderTreeNodes(domainNodes, null, 0)}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
-            
-            <div className="max-h-[140px] overflow-y-auto border border-[#EFEAE0] rounded-lg p-1 bg-white space-y-0.5">
-              {filteredNodes.length === 0 ? (
-                <p className="text-[10px] text-[#9E988F] text-center py-4">无匹配的知识点</p>
-              ) : (
-                filteredNodes.map(n => {
-                  const d = domains.find(x => x.id === n.domainId);
-                  const selected = selectedNodeId === n.id;
-                  return (
-                    <div
-                      key={n.id}
-                      onClick={() => setSelectedNodeId(n.id)}
-                      className={cn(
-                        'flex items-center justify-between px-3 py-1.5 rounded cursor-pointer transition-colors text-xs',
-                        selected ? 'bg-[#8FA67F]/15 text-[#3E4D3E] font-medium' : 'hover:bg-[#FAF7F2] text-[#6E6A64]'
-                      )}
-                    >
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: d?.color || '#8FA67F' }} />
-                        <span className="truncate">{n.title}</span>
-                      </div>
-                      <span className="text-[9px] text-[#9E988F] flex-shrink-0">
-                        {d?.name} ({n.status === 'done' ? '已完成' : '进行中'})
-                      </span>
-                    </div>
-                  );
-                })
+
+            {/* Right: Config panel */}
+            <div className="flex flex-col px-6 py-4 overflow-y-auto space-y-5">
+              {/* Selected nodes info */}
+              {selectedNodeIds.size > 0 && (
+                <div className="p-3 rounded-xl border border-[#8FA67F]/30 bg-[#8FA67F]/05">
+                  <div className="flex items-center gap-2 mb-2">
+                    <CheckCircle2 size={14} className="text-[#8FA67F] flex-shrink-0" />
+                    <span className="text-xs text-[#3E4D3E] font-medium">
+                      已选 {selectedNodeIds.size} 个知识点
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1 max-h-[80px] overflow-y-auto">
+                    {Array.from(selectedNodeIds).map(id => {
+                      const n = nodes.find(x => x.id === id);
+                      if (!n) return null;
+                      return (
+                        <span key={id} className="inline-flex items-center gap-1 bg-white border border-[#EFEAE0] rounded-full px-2 py-0.5 text-[10px] text-[#3E4D3E]">
+                          {n.title}
+                          <button type="button" onClick={() => toggleNodeSelection(id)} className="text-[#9E988F] hover:text-[#B36B5C]">
+                            <X size={9} />
+                          </button>
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
               )}
+
+              {/* Template Selector */}
+              <div>
+                <label className="text-xs font-medium text-[#6E6A64] block mb-1.5">
+                  应用复习模板
+                </label>
+                <select
+                  value={selectedTemplateId}
+                  onChange={e => setSelectedTemplateId(e.target.value)}
+                  className="w-full px-3 py-2.5 text-xs rounded-lg border border-[#EFEAE0] bg-[#F3EEE6] text-[#2C2A29] focus:outline-none focus:ring-1 focus:ring-[#8FA67F]"
+                >
+                  {templates.map(t => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} (间隔: {t.intervals.join(', ')} 天)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Learned Date Selector */}
+              <div>
+                <label className="text-xs font-medium text-[#6E6A64] block mb-1.5">
+                  学完日期
+                </label>
+                <input
+                  type="date"
+                  value={learnedDate}
+                  onChange={e => setLearnedDate(e.target.value)}
+                  className="w-full px-3 py-2.5 text-xs rounded-lg border border-[#EFEAE0] bg-[#F3EEE6] text-[#2C2A29] focus:outline-none focus:ring-1 focus:ring-[#8FA67F]"
+                />
+                <span className="text-[9px] text-[#9E988F] mt-1.5 block">
+                  复习阶段将自动从此日期开始计算，并向后安排间隔天数。
+                </span>
+              </div>
             </div>
           </div>
 
-          {/* Template Selector */}
-          <div>
-            <label className="text-xs font-medium text-[#6E6A64] block mb-1">
-              应用复习模板
-            </label>
-            <select
-              value={selectedTemplateId}
-              onChange={e => setSelectedTemplateId(e.target.value)}
-              className="w-full px-3 py-2 text-xs rounded-lg border border-[#EFEAE0] bg-[#F3EEE6] text-[#2C2A29] focus:outline-none focus:ring-1 focus:ring-[#8FA67F]"
-            >
-              {templates.map(t => (
-                <option key={t.id} value={t.id}>
-                  {t.name} (间隔: {t.intervals.join(', ')} 天)
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Learned Date Selector */}
-          <div>
-            <label className="text-xs font-medium text-[#6E6A64] block mb-1">
-              学完日期
-            </label>
-            <input
-              type="date"
-              value={learnedDate}
-              onChange={e => setLearnedDate(e.target.value)}
-              className="w-full px-3 py-2 text-xs rounded-lg border border-[#EFEAE0] bg-[#F3EEE6] text-[#2C2A29] focus:outline-none focus:ring-1 focus:ring-[#8FA67F]"
-            />
-            <span className="text-[9px] text-[#9E988F] mt-1 block">
-              复习阶段将自动从此日期开始计算，并向后安排间隔天数。
-            </span>
-          </div>
-
-          <div className="flex gap-2 pt-2 border-t border-[#EFEAE0] mt-4 flex-shrink-0">
+          {/* Footer buttons */}
+          <div className="flex gap-2 px-6 py-4 border-t border-[#EFEAE0] flex-shrink-0">
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-2 rounded-lg border border-[#EFEAE0] text-xs text-[#6E6A64] hover:bg-[#F3EEE6] transition-colors"
+              className="flex-1 py-2.5 rounded-lg border border-[#EFEAE0] text-xs text-[#6E6A64] hover:bg-[#F3EEE6] transition-colors"
             >
               取消
             </button>
             <button
               type="submit"
-              className="flex-1 py-2 rounded-lg bg-[#8FA67F] hover:bg-[#5D7052] text-white text-xs font-medium transition-colors shadow-sm"
+              className="flex-1 py-2.5 rounded-lg bg-[#8FA67F] hover:bg-[#5D7052] text-white text-xs font-medium transition-colors shadow-sm"
             >
               保存计划
             </button>
