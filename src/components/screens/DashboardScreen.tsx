@@ -17,6 +17,10 @@ import { cn } from '@/utils/utils';
 import { toast } from 'sonner';
 import { CalendarView } from '@/components/planning/CalendarView';
 import { NoteEditor } from '@/components/planning/NoteEditor';
+import { LearningTimer } from '@/components/dashboard/LearningTimer';
+import { LearningStatsPanel } from '@/components/dashboard/LearningStatsPanel';
+import { LearningHeatmap } from '@/components/dashboard/LearningHeatmap';
+import { LearningStreak } from '@/components/dashboard/LearningStreak';
 
 const getNow = () => Date.now();
 
@@ -849,6 +853,18 @@ export function DashboardScreen() {
             </div>
           </div>
         )}
+
+        {/* Middle Section - Timer, Stats, Streak */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+          {/* Learning Timer */}
+          <LearningTimer />
+          
+          {/* Learning Stats Panel */}
+          <LearningStatsPanel />
+          
+          {/* Learning Streak */}
+          <LearningStreak />
+        </div>
 
         {/* AI Daily Summary Block */}
         {config?.apiKey && tasks.length > 0 && (

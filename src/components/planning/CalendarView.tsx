@@ -9,20 +9,21 @@ import { useStore } from '@/lib/store';
 import { cn } from '@/utils/utils';
 import { getNodesByDomain, getNote, type KnowledgeNode } from '@/lib/db';
 
-export function CalendarView({ showAllDomains = false }: { showAllDomains?: boolean } = {}) {
+export function CalendarView({ showAllDomains = false, showCurrentMonthOnly = false }: { showAllDomains?: boolean; showCurrentMonthOnly?: boolean } = {}) {
   const { nodes, domains, config, setActiveNodeId, setEditorOpen, setActiveNote } = useStore();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [allNodes, setAllNodes] = useState<KnowledgeNode[]>([]);
 
-  const year = currentDate.getFullYear();
-  const month = currentDate.getMonth();
+  const effectiveDate = showCurrentMonthOnly ? new Date() : currentDate;
+  const year = effectiveDate.getFullYear();
+  const month = effectiveDate.getMonth();
 
   const firstDay = new Date(year, month, 1);
   const lastDay = new Date(year, month + 1, 0);
   const startWeekday = firstDay.getDay(); // 0=Sun
   const daysInMonth = lastDay.getDate();
 
-  const monthName = currentDate.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long' });
+  const monthName = effectiveDate.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long' });
 
   // Load all nodes from all domains to compute global daily hours
   useEffect(() => {
@@ -79,18 +80,20 @@ export function CalendarView({ showAllDomains = false }: { showAllDomains?: bool
         <h2 className="text-base font-semibold text-[#2C2A29]" style={{ fontFamily: 'Cinzel, Georgia, serif' }}>
           {monthName}
         </h2>
-        <div className="flex gap-1">
-          <button onClick={() => setCurrentDate(new Date(year, month - 1, 1))}
-            className="p-1.5 rounded-lg hover:bg-[#EFEAE0] text-[#6E6A64]">
-            <ChevronLeft size={15} />
-          </button>
-          <button onClick={() => setCurrentDate(new Date())}
-            className="px-2.5 py-1 text-xs rounded-lg hover:bg-[#EFEAE0] text-[#6E6A64]">今天</button>
-          <button onClick={() => setCurrentDate(new Date(year, month + 1, 1))}
-            className="p-1.5 rounded-lg hover:bg-[#EFEAE0] text-[#6E6A64]">
-            <ChevronRight size={15} />
-          </button>
-        </div>
+        {!showCurrentMonthOnly && (
+          <div className="flex gap-1">
+            <button onClick={() => setCurrentDate(new Date(year, month - 1, 1))}
+              className="p-1.5 rounded-lg hover:bg-[#EFEAE0] text-[#6E6A64]">
+              <ChevronLeft size={15} />
+            </button>
+            <button onClick={() => setCurrentDate(new Date())}
+              className="px-2.5 py-1 text-xs rounded-lg hover:bg-[#EFEAE0] text-[#6E6A64]">今天</button>
+            <button onClick={() => setCurrentDate(new Date(year, month + 1, 1))}
+              className="p-1.5 rounded-lg hover:bg-[#EFEAE0] text-[#6E6A64]">
+              <ChevronRight size={15} />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Weekday headers */}
@@ -121,7 +124,8 @@ export function CalendarView({ showAllDomains = false }: { showAllDomains?: bool
                 key={dateStr}
                 whileHover={{ scale: 1.01 }}
                 className={cn(
-                  'min-h-[100px] rounded-lg p-1.5 border text-left flex flex-col justify-between transition-colors',
+                  'rounded-lg border text-left flex flex-col justify-between transition-colors',
+                  showCurrentMonthOnly ? 'min-h-[60px] p-1' : 'min-h-[100px] p-1.5',
                   isToday 
                     ? 'border-[#8FA67F]/60 bg-[#8FA67F]/08' 
                     : isOverLimit
@@ -193,7 +197,7 @@ export function CalendarView({ showAllDomains = false }: { showAllDomains?: bool
       </div>
 
       {/* Legend */}
-      {domains.length > 0 && (
+      {!showCurrentMonthOnly && domains.length > 0 && (
         <div className="flex flex-wrap gap-3 mt-4 pt-4 border-t border-[#EFEAE0]">
           {domains.map(d => (
             <div key={d.id} className="flex items-center gap-1.5 text-[11px] text-[#6E6A64]">

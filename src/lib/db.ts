@@ -116,8 +116,17 @@ export type DailyPlan = {
   updatedAt: number;
 };
 
+export type LearningStatRecord = {
+  id: string;              // 唯一ID
+  nodeId: string;          // 知识点ID
+  fromStatus: NodeStatus | null;  // 变更前状态（null表示新建）
+  toStatus: NodeStatus;    // 变更后状态
+  timestamp: number;       // 变更时间戳
+  createdAt: number;       // 记录创建时间
+};
+
 const DB_NAME = 'learnflow';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 let _db: IDBPDatabase | null = null;
 
@@ -151,6 +160,11 @@ export async function getDB() {
       }
       if (!db.objectStoreNames.contains('dailyPlans')) {
         db.createObjectStore('dailyPlans', { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('learningStats')) {
+        const statsStore = db.createObjectStore('learningStats', { keyPath: 'id' });
+        statsStore.createIndex('by-node', 'nodeId');
+        statsStore.createIndex('by-date', 'timestamp');
       }
 
       // Add default templates if upgrading/creating
@@ -295,5 +309,26 @@ export async function getDailyPlan(id: string): Promise<DailyPlan | undefined> {
 export async function putDailyPlan(p: DailyPlan) {
   const db = await getDB();
   return db.put('dailyPlans', p);
+}
+
+/* ── Learning Stats ── */
+export async function getLearningStats(): Promise<LearningStatRecord[]> {
+  const db = await getDB();
+  return db.getAll('learningStats');
+}
+
+export async function getLearningStatsByNode(nodeId: string): Promise<LearningStatRecord[]> {
+  const db = await getDB();
+  return db.getAllFromIndex('learningStats', 'by-node', nodeId);
+}
+
+export async function putLearningStat(record: LearningStatRecord) {
+  const db = await getDB();
+  return db.put('learningStats', record);
+}
+
+export async function deleteLearningStat(id: string) {
+  const db = await getDB();
+  return db.delete('learningStats', id);
 }
 

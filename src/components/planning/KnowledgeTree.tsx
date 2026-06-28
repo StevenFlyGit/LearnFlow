@@ -11,6 +11,7 @@ import {
 import { useStore } from '@/lib/store';
 import { putNode, deleteNode, getNote, putNote, getNodesByDomain, type KnowledgeNode } from '@/lib/db';
 import { generateNodeId, getNow, syncDomainHours, syncParentHours, recalculateAllParentHours } from '@/lib/tree-utils';
+import { recordStatusChange } from '@/lib/learning-stats';
 import { cn } from '@/utils/utils';
 import { toast } from 'sonner';
 
@@ -82,7 +83,13 @@ function TreeNode({
   const cycleStatus = async (e: React.MouseEvent) => {
     e.stopPropagation();
     const order: NodeStatus[] = ['pending', 'in_progress', 'done'];
-    const next = order[(order.indexOf(node.status) + 1) % 3];
+    const currentIndex = order.indexOf(node.status);
+    const nextIndex = (currentIndex + 1) % 3;
+    const next = order[nextIndex];
+    
+    // 记录状态变更
+    await recordStatusChange(node.id, node.status, next);
+    
     const updated = { ...node, status: next };
     await putNode(updated);
     upsertNode(updated);
