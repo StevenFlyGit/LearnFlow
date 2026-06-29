@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Timer, Coffee, RotateCcw, Play, Pause, SkipForward } from 'lucide-react';
+import { Timer, Coffee, RotateCcw, Play, Pause, SkipForward, Plus, Minus } from 'lucide-react';
 import { cn } from '@/utils/utils';
 
 type TimerMode = 'pomodoro' | 'free';
@@ -13,9 +13,6 @@ const POMODORO_CONFIG = {
   shortBreak: 5 * 60,
   longBreak: 15 * 60,
 };
-
-// 自由计时预设选项（分钟）
-const FREE_PRESETS = [5, 10, 15, 25, 45, 60];
 
 export function LearningTimer() {
   // ---- 番茄钟状态 ----
@@ -368,43 +365,34 @@ export function LearningTimer() {
             </button>
           </div>
 
-          {/* Preset Buttons + Custom */}
+          {/* Custom Time Picker */}
           {!isFreeRunning && (
-            <div className="flex flex-wrap justify-center items-center gap-1.5 mt-2">
-              {FREE_PRESETS.map(minutes => (
-                <button
-                  key={minutes}
-                  onClick={() => {
-                    setFreeDuration(minutes * 60);
-                    setFreeTimeLeft(minutes * 60);
-                    setFreeMinutesInput(String(minutes));
-                  }}
-                  className={cn(
-                    'px-2.5 py-1 rounded-lg text-xs font-medium transition-all',
-                    FREE_PRESETS.includes(Math.round(freeDuration / 60)) && freeDuration === minutes * 60
-                      ? 'bg-[#5D7052] text-white shadow-sm'
-                      : 'bg-[#F3EEE6] text-[#9E988F] hover:bg-[#EFEAE0]'
-                  )}
-                >
-                  {minutes}分钟
-                </button>
-              ))}
-              <div className="flex items-center gap-1">
-                <input
-                  type="text"
-                  value={freeMinutesInput}
-                  onChange={handleFreeMinutesChange}
-                  onBlur={applyFreeMinutes}
-                  onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-                  className={cn(
-                    'w-16 text-center text-xs font-medium rounded-lg px-2 py-1 border-none outline-none transition-all',
-                    FREE_PRESETS.includes(Math.round(freeDuration / 60))
-                      ? 'text-[#2C2A29] bg-[#F3EEE6] focus:ring-1 focus:ring-[#8FA67F]'
-                      : 'text-white bg-[#5D7052] shadow-sm'
-                  )}
-                />
-                <span className="text-xs text-[#9E988F]">分钟</span>
-              </div>
+            <div className="flex items-center justify-center gap-2 mt-2">
+              <button
+                onClick={() => adjustFreeTime(-1)}
+                className="p-1.5 rounded-full bg-[#F3EEE6] text-[#9E988F] hover:bg-[#EFEAE0] hover:text-[#6E6A64] transition-colors"
+                title="减少1分钟"
+              >
+                <Minus size={14} />
+              </button>
+              <input
+                type="number"
+                min={1}
+                max={999}
+                value={freeMinutesInput}
+                onChange={handleFreeMinutesChange}
+                onBlur={applyFreeMinutes}
+                onKeyDown={(e) => e.key === 'Enter' && applyFreeMinutes()}
+                className="w-16 text-center text-sm font-medium text-[#2C2A29] bg-[#F3EEE6] rounded-lg px-2 py-1.5 border-none outline-none focus:ring-1 focus:ring-[#8FA67F] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              />
+              <span className="text-xs text-[#9E988F]">分钟</span>
+              <button
+                onClick={() => adjustFreeTime(1)}
+                className="p-1.5 rounded-full bg-[#F3EEE6] text-[#9E988F] hover:bg-[#EFEAE0] hover:text-[#6E6A64] transition-colors"
+                title="增加1分钟"
+              >
+                <Plus size={14} />
+              </button>
             </div>
           )}
         </div>

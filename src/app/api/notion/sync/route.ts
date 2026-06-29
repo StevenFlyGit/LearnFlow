@@ -3,6 +3,7 @@
  * 将选中的知识节点同步到 Notion Database
  */
 import { NextRequest } from 'next/server';
+import { resolveNotionConfig, missingNotionTokenResponse } from '@/lib/server/resolve-ai-config';
 
 type SyncNode = {
   id: string;
@@ -334,19 +335,17 @@ export async function POST(req: NextRequest) {
     nodes: SyncNode[];
   } = await req.json();
 
-  if (!notionToken) {
-    return new Response(JSON.stringify({ error: '请先配置 Notion Token' }), {
-      status: 400, headers: { 'Content-Type': 'application/json' }
-    });
-  }
+  const resolved = resolveNotionConfig({ notionToken, databaseId });
+  if (!resolved) return missingNotionTokenResponse();
+  const { notionToken: finalToken, databaseId: finalDbId } = resolved;
 
   const notionHeaders = {
-    'Authorization': `Bearer ${notionToken}`,
+    'Authorization': `Bearer ${finalToken}`,
     'Content-Type': 'application/json',
     'Notion-Version': '2022-06-28',
   };
 
-  let targetDatabaseId = databaseId;
+  let targetDatabaseId = finalDbId;
 
   // 如果没有 database ID，先创建一个
   if (!targetDatabaseId) {

@@ -4,16 +4,15 @@
  */
 import { NextRequest } from 'next/server';
 import { sanitizeBaseUrl } from '@/utils/utils';
+import { resolveAiConfig, missingApiKeyResponse } from '@/lib/server/resolve-ai-config';
 import fs from 'fs';
 
 export async function POST(req: NextRequest) {
   const { content, nodeTitle, apiKey, provider, modelName, baseUrl } = await req.json();
 
-  if (!apiKey) {
-    return new Response(JSON.stringify({ error: '请先配置 API Key' }), {
-      status: 400, headers: { 'Content-Type': 'application/json' }
-    });
-  }
+  const resolved = resolveAiConfig({ apiKey, provider, modelName, baseUrl });
+  if (!resolved) return missingApiKeyResponse();
+  const { apiKey: finalKey, provider: finalProvider, modelName: finalModel, baseUrl: finalBaseUrl } = resolved;
 
   const systemPrompt = `你是一个专业的知识整理助手，帮助学习者优化和完善学习笔记。`;
   const userPrompt = `当前知识点：「${nodeTitle}」
@@ -33,17 +32,17 @@ ${content}
 
 只输出 JSON，不要其他文字。`;
 
-  const endpoint = sanitizeBaseUrl(baseUrl, provider);
-  const model = modelName || (provider === 'openai' ? 'gpt-4o-mini' : provider === 'deepseek' ? 'deepseek-chat' : 'claude-3-5-sonnet-20241022');
+  const endpoint = sanitizeBaseUrl(finalBaseUrl, finalProvider);
+  const model = finalModel || (finalProvider === 'openai' ? 'gpt-4o-mini' : finalProvider === 'deepseek' ? 'deepseek-chat' : 'claude-3-5-sonnet-20241022');
 
   try {
-    if (provider === 'anthropic') {
+    if (finalProvider === 'anthropic') {
       const res = await fetch(`${endpoint}/messages`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'Authorization': `Bearer ${apiKey}`,
+          'x-api-key': finalKey,
+          'Authorization': `Bearer ${finalKey}`,
           'anthropic-version': '2023-06-01',
           'User-Agent': 'LearnFlow/1.0',
         },
@@ -82,7 +81,7 @@ ${content}
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
+          'Authorization': `Bearer ${finalKey}`,
           'User-Agent': 'LearnFlow/1.0',
         },
         body: JSON.stringify({ model, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }], max_tokens: 2048 }),

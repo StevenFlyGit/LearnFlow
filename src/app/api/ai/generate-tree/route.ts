@@ -4,16 +4,15 @@
  */
 import { NextRequest } from 'next/server';
 import { sanitizeBaseUrl } from '@/utils/utils';
+import { resolveAiConfig, missingApiKeyResponse } from '@/lib/server/resolve-ai-config';
 import fs from 'fs';
 
 export async function POST(req: NextRequest) {
   const { domain, dailyHours, apiKey, provider, modelName, baseUrl, goal, scope, industry } = await req.json();
 
-  if (!apiKey) {
-    return new Response(JSON.stringify({ error: '请先在 Token 配置页填写 API Key' }), {
-      status: 400, headers: { 'Content-Type': 'application/json' }
-    });
-  }
+  const resolved = resolveAiConfig({ apiKey, provider, modelName, baseUrl });
+  if (!resolved) return missingApiKeyResponse();
+  const { apiKey: finalKey, provider: finalProvider, modelName: finalModel, baseUrl: finalBaseUrl } = resolved;
 
   const systemPrompt = `你是一个专业的学习路径规划师。用户给出一个学习领域，你需要生成一个完整的分层知识树，用于规划学习路径。
 
@@ -66,17 +65,17 @@ export async function POST(req: NextRequest) {
   if (industry) userPrompt += `\n行业/应用场景：${industry}`;
   userPrompt += `\n学习者每天可投入 ${dailyHours} 小时，请确保每个叶子节点的预估时间不超过 ${dailyHours} 小时。`;
 
-  const endpoint = sanitizeBaseUrl(baseUrl, provider);
-  const model = modelName || (provider === 'openai' ? 'gpt-4o-mini' : provider === 'deepseek' ? 'deepseek-chat' : 'claude-3-5-sonnet-20241022');
+  const endpoint = sanitizeBaseUrl(finalBaseUrl, finalProvider);
+  const model = finalModel || (finalProvider === 'openai' ? 'gpt-4o-mini' : finalProvider === 'deepseek' ? 'deepseek-chat' : 'claude-3-5-sonnet-20241022');
 
   try {
-    if (provider === 'anthropic') {
+    if (finalProvider === 'anthropic') {
       const res = await fetch(`${endpoint}/messages`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'Authorization': `Bearer ${apiKey}`,
+          'x-api-key': finalKey,
+          'Authorization': `Bearer ${finalKey}`,
           'anthropic-version': '2023-06-01',
           'User-Agent': 'LearnFlow/1.0',
         },
@@ -123,7 +122,7 @@ export async function POST(req: NextRequest) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
+          'Authorization': `Bearer ${finalKey}`,
           'User-Agent': 'LearnFlow/1.0',
         },
         body: JSON.stringify({
