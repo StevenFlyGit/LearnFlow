@@ -373,10 +373,6 @@ export function NoteEditor() {
 
   // Launch AI note organization
   const handleOrganize = async () => {
-    if (!config?.apiKey) {
-      toast.error('请先在 Token 配置页填写 API Key');
-      return;
-    }
     if (!content.trim()) {
       toast.error('当前笔记内容为空');
       return;
@@ -499,15 +495,13 @@ export function NoteEditor() {
           </div>
           <div className="flex items-center gap-1.5 ml-2">
             {/* AI Organize Button */}
-            {config?.apiKey && (
-              <button
-                onClick={handleOrganize}
-                className="p-1.5 rounded-lg text-[#9E988F] hover:bg-[#F3EEE6] hover:text-[#8FA67F] transition-colors"
-                title="AI 整理笔记"
-              >
-                <Sparkles size={13} />
-              </button>
-            )}
+            <button
+              onClick={handleOrganize}
+              className="p-1.5 rounded-lg text-[#9E988F] hover:bg-[#F3EEE6] hover:text-[#8FA67F] transition-colors"
+              title="AI 整理笔记"
+            >
+              <Sparkles size={13} />
+            </button>
 
             <button
               onClick={() => setPreview(!preview)}

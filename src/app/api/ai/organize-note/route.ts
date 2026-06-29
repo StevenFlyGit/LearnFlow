@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
   const { content, nodeTitle, apiKey, provider, modelName, baseUrl } = await req.json();
 
   if (!apiKey) {
-    return new Response(JSON.stringify({ error: '请先配置 API Key' }), {
+    return new Response(JSON.stringify({ error: '请先在 Token 配置页填写 API Key' }), {
       status: 400, headers: { 'Content-Type': 'application/json' }
     });
   }
