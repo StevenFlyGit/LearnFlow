@@ -58,6 +58,9 @@ Thumbs.db
 # TypeScript cache
 *.tsbuildinfo
 
+# Vercel
+.vercel
+
 # Python & virtual environments (kept from original just in case)
 __pycache__/
 *.py[cod]

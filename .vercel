@@ -1,4 +1,0 @@
-{
-  "buildCommand": "npm dev",
-  "installCommand": "npm install"
-}
