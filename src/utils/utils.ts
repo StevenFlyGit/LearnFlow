@@ -5,7 +5,7 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-export function sanitizeBaseUrl(url: string | undefined | null, provider: 'openai' | 'deepseek' | 'anthropic'): string {
+export function sanitizeBaseUrl(url: string | undefined | null, provider: string): string {
   if (!url) {
     return provider === 'anthropic' ? 'https://api.anthropic.com/v1' : 'https://api.openai.com/v1';
   }

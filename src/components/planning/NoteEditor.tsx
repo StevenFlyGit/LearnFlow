@@ -383,6 +383,11 @@ export function NoteEditor() {
       return;
     }
 
+    if (!config?.apiKey) {
+      toast.error('请先配置 API Key');
+      return;
+    }
+
     setOrganizing(true);
     setShowOrganizeModal(true);
     try {
