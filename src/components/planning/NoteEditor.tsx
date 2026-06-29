@@ -5,6 +5,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Eye, Edit, Sparkles, Loader2, ChevronDown, CheckCircle2, Lightbulb, Rss, ArrowRight, Check, BookOpen } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 import { useStore } from '@/lib/store';
 import { putNote, putNode, putDomain, getNote, getNode, type Note, type KnowledgeNode } from '@/lib/db';
 import { toast } from 'sonner';
@@ -23,21 +28,6 @@ function MarkdownPreview({
   onNavigate: (nodeId: string) => void;
 }) {
   const children = nodes.filter(n => n.parentId === node.id).sort((a, b) => a.order - b.order);
-
-  // Escape user HTML first to prevent XSS
-  const escaped = content
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const html = escaped
-    .replace(/^### (.+)$/gm, '<h3 class="text-base font-semibold text-[#2C2A29] mt-4 mb-2" style="font-family:Cinzel,Georgia,serif">$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2 class="text-lg font-semibold text-[#2C2A29] mt-5 mb-2" style="font-family:Cinzel,Georgia,serif">$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1 class="text-xl font-bold text-[#2C2A29] mt-6 mb-3" style="font-family:Cinzel,Georgia,serif">$1</h1>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold text-[#2C2A29]">$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em class="italic text-[#6E6A64]">$1</em>')
-    .replace(/`(.+?)`/g, '<code class="px-1 py-0.5 rounded bg-[#ECE6DA] text-[#C8834A] text-xs font-mono">$1</code>')
-    .replace(/^- (.+)$/gm, '<li class="ml-4 text-sm text-[#3E4D3E] list-disc">$1</li>')
-    .replace(/^(\d+)\. (.+)$/gm, '<li class="ml-4 text-sm text-[#3E4D3E] list-decimal">$2</li>')
-    .replace(/\n\n/g, '</p><p class="text-sm text-[#3E4D3E] leading-relaxed mb-3">')
-    .replace(/\n/g, '<br/>');
 
   return (
     <div className="px-4 py-3 text-sm text-[#3E4D3E] leading-relaxed overflow-y-auto">
@@ -71,7 +61,22 @@ function MarkdownPreview({
         </div>
       )}
 
-      <div dangerouslySetInnerHTML={{ __html: `<p class="text-sm text-[#3E4D3E] leading-relaxed mb-3">${html}</p>` }} />
+      {/* Markdown Content with Table and Math support */}
+      <div className="markdown-content prose prose-sm max-w-none prose-headings:font-semibold prose-headings:text-[#2C2A29] prose-headings:[font-family:Cinzel,Georgia,serif] prose-p:text-[#3E4D3E] prose-code:bg-[#ECE6DA] prose-code:text-[#C8834A] prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:font-mono prose-code:text-xs prose-pre:bg-[#F3EEE6] prose-table:border-collapse prose-table:w-full prose-th:border prose-th:border-[#EFEAE0] prose-th:bg-[#F3EEE6] prose-th:p-2 prose-td:border prose-td:border-[#EFEAE0] prose-td:p-2 prose-ul:list-disc prose-ol:list-decimal prose-li:ml-4">
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm, remarkMath]}
+          rehypePlugins={[rehypeKatex]}
+          components={{
+            h1: ({ children }) => <h1 className="text-xl font-bold text-[#2C2A29] mt-6 mb-3" style={{ fontFamily: 'Cinzel, Georgia, serif' }}>{children}</h1>,
+            h2: ({ children }) => <h2 className="text-lg font-semibold text-[#2C2A29] mt-5 mb-2" style={{ fontFamily: 'Cinzel, Georgia, serif' }}>{children}</h2>,
+            h3: ({ children }) => <h3 className="text-base font-semibold text-[#2C2A29] mt-4 mb-2" style={{ fontFamily: 'Cinzel, Georgia, serif' }}>{children}</h3>,
+            strong: ({ children }) => <strong className="font-semibold text-[#2C2A29]">{children}</strong>,
+            em: ({ children }) => <em className="italic text-[#6E6A64]">{children}</em>,
+          }}
+        >
+          {content}
+        </ReactMarkdown>
+      </div>
     </div>
   );
 }
