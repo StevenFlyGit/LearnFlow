@@ -32,7 +32,7 @@ ${content}
 3. **纠错与精炼**：纠正所有的拼写与语法错漏，消除口语化或重复性表达。
 4. **技术细节**：对于涉及代码、算法或公式的术语，用行内代码块 \`术语\` 或多行代码块进行排版。
 
-请直接输出整理后的完整 Markdown 文本。不要添加任何开头说明、包裹符号（如 ```markdown 符号），只输出最终用于替换的笔记内容。`;
+请直接输出整理后的完整 Markdown 文本。不要添加任何开头说明、包裹符号（如 \`\`\`markdown 符号），只输出最终用于替换的笔记内容。`;
 
   const endpoint = sanitizeBaseUrl(finalBaseUrl, finalProvider);
   const model = finalModel || (finalProvider === 'openai' ? 'gpt-4o-mini' : finalProvider === 'deepseek' ? 'deepseek-chat' : 'claude-3-5-sonnet-20241022');
