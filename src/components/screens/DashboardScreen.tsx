@@ -51,10 +51,6 @@ export function WeeklySummaryPanel({ tasks }: { tasks: DashboardTaskItem[] }) {
   } | null>(null);
 
   const generate = async () => {
-    if (!config?.apiKey) {
-      toast.error('请先在 Token 配置页填写 API Key');
-      return;
-    }
     setLoading(true);
     try {
       const res = await fetch('/api/ai/weekly-summary', {
@@ -66,10 +62,10 @@ export function WeeklySummaryPanel({ tasks }: { tasks: DashboardTaskItem[] }) {
             status: t.status === 'done' ? 'done' : 'in_progress',
             content: `[${t.type === 'study' ? '学习' : '复习'}] ${t.domainName} - ${t.nodeTitle}`
           })),
-          apiKey: config.apiKey,
-          provider: config.aiProvider,
-          modelName: config.modelName,
-          baseUrl: config.baseUrl,
+          apiKey: config?.apiKey,
+          provider: config?.aiProvider,
+          modelName: config?.modelName,
+          baseUrl: config?.baseUrl,
         }),
       });
       if (!res.ok) {
@@ -691,10 +687,6 @@ export function DashboardScreen() {
 
   // Generate AI Daily Summary Text
   const handleGenerateAiSummary = async () => {
-    if (!config?.apiKey) {
-      toast.error('请先在 Token 配置页填写 API Key');
-      return;
-    }
     if (tasks.length === 0) {
       toast.info('今天没有安排任何任务，无需生成总结。');
       return;
@@ -707,10 +699,10 @@ export function DashboardScreen() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tasks: tasks.map(t => ({ title: t.nodeTitle, type: t.type })),
-          apiKey: config.apiKey,
-          provider: config.aiProvider,
-          modelName: config.modelName,
-          baseUrl: config.baseUrl
+          apiKey: config?.apiKey,
+          provider: config?.aiProvider,
+          modelName: config?.modelName,
+          baseUrl: config?.baseUrl
         })
       });
       if (!res.ok) {

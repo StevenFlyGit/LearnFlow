@@ -92,7 +92,6 @@ function AIEnhancePanel({ nodeTitle, content, onInsert }: {
   } | null>(null);
 
   const run = async () => {
-    if (!config?.apiKey) { toast.error('请先配置 API Key'); return; }
     if (!content.trim()) { toast.error('笔记内容为空'); return; }
     setLoading(true);
     try {
@@ -101,8 +100,8 @@ function AIEnhancePanel({ nodeTitle, content, onInsert }: {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           content, nodeTitle,
-          apiKey: config.apiKey, provider: config.aiProvider,
-          modelName: config.modelName, baseUrl: config.baseUrl,
+          apiKey: config?.apiKey, provider: config?.aiProvider,
+          modelName: config?.modelName, baseUrl: config?.baseUrl,
         }),
       });
       if (!res.ok) {
@@ -383,11 +382,6 @@ export function NoteEditor() {
       return;
     }
 
-    if (!config?.apiKey) {
-      toast.error('请先配置 API Key');
-      return;
-    }
-
     setOrganizing(true);
     setShowOrganizeModal(true);
     try {
@@ -397,10 +391,10 @@ export function NoteEditor() {
         body: JSON.stringify({
           content,
           nodeTitle: node?.title || '',
-          apiKey: config.apiKey,
-          provider: config.aiProvider,
-          modelName: config.modelName,
-          baseUrl: config.baseUrl
+          apiKey: config?.apiKey,
+          provider: config?.aiProvider,
+          modelName: config?.modelName,
+          baseUrl: config?.baseUrl
         })
       });
       if (!res.ok) {

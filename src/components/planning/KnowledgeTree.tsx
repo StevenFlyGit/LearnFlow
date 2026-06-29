@@ -410,7 +410,6 @@ export function KnowledgeTree({ onSelectNode }: { onSelectNode: (n: KnowledgeNod
   };
 
   const handleGenerate = async () => {
-    if (!config?.apiKey) return toast.error('请先在 Token 配置页填写 API Key');
     if (!domain) return;
 
     if (nodes.length > 0) {
@@ -426,8 +425,8 @@ export function KnowledgeTree({ onSelectNode }: { onSelectNode: (n: KnowledgeNod
         body: JSON.stringify({
           domain: domain.name, dailyHours: domain.dailyHours,
           goal: domain.goal, scope: domain.scope, industry: domain.industry,
-          apiKey: config.apiKey, provider: config.aiProvider,
-          modelName: config.modelName, baseUrl: config.baseUrl,
+          apiKey: config?.apiKey, provider: config?.aiProvider,
+          modelName: config?.modelName, baseUrl: config?.baseUrl,
         }),
       });
       if (!res.ok) {

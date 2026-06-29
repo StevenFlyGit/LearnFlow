@@ -161,7 +161,7 @@ function NewDomainModal({ onClose, onCreated }: { onClose: () => void; onCreated
       };
       await putDomain(domain);
 
-      if (useAI && config?.apiKey) {
+      if (useAI) {
         // 后台生成知识树（异步，不阻塞创建）
         onCreated(domain);
         onClose();
@@ -172,8 +172,8 @@ function NewDomainModal({ onClose, onCreated }: { onClose: () => void; onCreated
           body: JSON.stringify({
             domain: name.trim(), dailyHours,
             goal: goal.trim(), scope: scope.trim(), industry: industry.trim(),
-            apiKey: config.apiKey, provider: config.aiProvider,
-            modelName: config.modelName, baseUrl: config.baseUrl,
+            apiKey: config?.apiKey, provider: config?.aiProvider,
+            modelName: config?.modelName, baseUrl: config?.baseUrl,
           }),
         });
         if (!res.ok) {
