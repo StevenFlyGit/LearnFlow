@@ -262,41 +262,42 @@ export function TokenScreen() {
                     <input value={form.userAvatar || ''} onChange={e => setForm(f => ({ ...f, userAvatar: e.target.value }))}
                       placeholder="https://..." className={INPUT_CLASS} />
                   </div>
-                  <div>
-                    <label className="text-[11px] font-medium text-[#9E988F] mb-1 block">学习偏好备注 (未来扩展)</label>
-                    <input value={form.learningPreferences || ''} onChange={e => setForm(f => ({ ...f, learningPreferences: e.target.value }))}
-                      placeholder="例如：倾向清晨学习、数学偏好等" className={INPUT_CLASS} />
-                  </div>
                 </div>
               </div>
 
               {/* Learning Preferences */}
               <div className="border-t border-[#EFEAE0]/60 pt-3.5">
                 <h3 className="text-xs font-semibold text-[#6E6A64] mb-2">学习偏好</h3>
-                <div>
-                  <label className="text-[11px] font-medium text-[#9E988F] mb-1 block">
-                    全局每日学习时间上限 (小时)
-                  </label>
-                  <input 
-                    type="number" 
-                    min="1" 
-                    max="24"
-                    value={form.globalDailyHours ?? ''} 
-                    onChange={e => {
-                      const val = e.target.value;
-                      setForm(f => ({ 
-                        ...f, 
-                        globalDailyHours: val === '' ? undefined : Math.min(24, Math.max(1, parseInt(val) || 1)) 
-                      }));
-                    }}
-                    placeholder="不限制" 
-                    className={INPUT_CLASS} 
-                  />
-                  <span className="text-[10px] text-[#9E988F] mt-1 block">
-                    各领域总工时超标时将触发视觉警告标志
-                  </span>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] font-medium text-[#9E988F] mb-1 block">
+                      全局每日学习时间上限 (小时)
+                    </label>
+                    <input 
+                      type="number" 
+                      min="1" 
+                      max="24"
+                      value={form.globalDailyHours ?? ''} 
+                      onChange={e => {
+                        const val = e.target.value;
+                        setForm(f => ({ 
+                          ...f, 
+                          globalDailyHours: val === '' ? undefined : Math.min(24, Math.max(1, parseInt(val) || 1)) 
+                        }));
+                      }}
+                      placeholder="不限制" 
+                      className={INPUT_CLASS} 
+                    />
+                    <span className="text-[10px] text-[#9E988F] mt-1 block">
+                      各领域总工时超标时将触发视觉警告标志
+                    </span>
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-medium text-[#9E988F] mb-1 block">学习偏好备注 (未来扩展)</label>
+                    <input value={form.learningPreferences || ''} onChange={e => setForm(f => ({ ...f, learningPreferences: e.target.value }))}
+                      placeholder="例如：倾向清晨学习、数学偏好等" className={INPUT_CLASS} />
+                  </div>
                 </div>
-
               </div>
             </div>
           </div>
