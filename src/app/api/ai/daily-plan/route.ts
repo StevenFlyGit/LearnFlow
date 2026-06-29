@@ -4,13 +4,16 @@
  */
 import { NextRequest } from 'next/server';
 import { sanitizeBaseUrl } from '@/utils/utils';
+import { resolveAiConfig, getDefaultModel } from '@/lib/ai/resolve-config';
 import fs from 'fs';
 
 export async function POST(req: NextRequest) {
-  const { tasks, apiKey, provider, modelName, baseUrl } = await req.json();
+  const body = await req.json();
+  const { apiKey, provider, modelName, baseUrl } = resolveAiConfig(body);
+  const { tasks } = body;
 
   if (!apiKey) {
-    return new Response(JSON.stringify({ error: '请先配置 API Key' }), {
+    return new Response(JSON.stringify({ error: '请先在 Token 配置页填写 API Key，或在系统环境变量中设置 AI_API_KEY' }), {
       status: 400, headers: { 'Content-Type': 'application/json' }
     });
   }
@@ -26,7 +29,7 @@ ${tasksText}
 请为我生成一段简短、温暖、有感染力且能鼓励我开始学习的计划摘要文案（包含一句简短行动倡议）。字数控制在 80 字以内。用中文输出。只输出文案，不要有其他包围字符或前缀。`;
 
   const endpoint = sanitizeBaseUrl(baseUrl, provider);
-  const model = modelName || (provider === 'openai' ? 'gpt-4o-mini' : provider === 'deepseek' ? 'deepseek-chat' : 'claude-3-5-sonnet-20241022');
+  const model = modelName || getDefaultModel(provider);
 
   try {
     if (provider === 'anthropic') {

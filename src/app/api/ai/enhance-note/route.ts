@@ -4,13 +4,16 @@
  */
 import { NextRequest } from 'next/server';
 import { sanitizeBaseUrl } from '@/utils/utils';
+import { resolveAiConfig, getDefaultModel } from '@/lib/ai/resolve-config';
 import fs from 'fs';
 
 export async function POST(req: NextRequest) {
-  const { content, nodeTitle, apiKey, provider, modelName, baseUrl } = await req.json();
+  const body = await req.json();
+  const { apiKey, provider, modelName, baseUrl } = resolveAiConfig(body);
+  const { content, nodeTitle } = body;
 
   if (!apiKey) {
-    return new Response(JSON.stringify({ error: '请先配置 API Key' }), {
+    return new Response(JSON.stringify({ error: '请先在 Token 配置页填写 API Key，或在系统环境变量中设置 AI_API_KEY' }), {
       status: 400, headers: { 'Content-Type': 'application/json' }
     });
   }
@@ -34,7 +37,7 @@ ${content}
 只输出 JSON，不要其他文字。`;
 
   const endpoint = sanitizeBaseUrl(baseUrl, provider);
-  const model = modelName || (provider === 'openai' ? 'gpt-4o-mini' : provider === 'deepseek' ? 'deepseek-chat' : 'claude-3-5-sonnet-20241022');
+  const model = modelName || getDefaultModel(provider);
 
   try {
     if (provider === 'anthropic') {
